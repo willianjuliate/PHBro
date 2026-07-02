@@ -324,6 +324,19 @@ echo.
 goto :eof
 
 :: =====================================================
+:: ENSURE_HIDDEN_VBS - cria (uma unica vez) o script que
+:: dispara um processo com janela 100% oculta e desanexada
+:: do console que chamou o bro.bat
+:: =====================================================
+:ENSURE_HIDDEN_VBS
+if exist "%BASEDIR%hidden_run.vbs" goto :eof
+(
+    echo Set objShell = CreateObject("WScript.Shell"^)
+    echo objShell.Run """" ^& WScript.Arguments(0^) ^& """", 0, False
+) > "%BASEDIR%hidden_run.vbs"
+goto :eof
+
+:: =====================================================
 :: START
 :: =====================================================
 :START
@@ -381,11 +394,23 @@ if not exist "%MYSQL_DATA%\mysql" (
 
 if not exist "%BASEDIR%\data\logs" mkdir "%BASEDIR%\data\logs"
 
-echo %GREEN%[√] MySQL  iniciado%RESET%
-start "" /B "%MYSQL_HOME%\bin\mysqld.exe" --defaults-file="%BASEDIR%my.ini" --basedir="%MYSQL_HOME%" --datadir="%MYSQL_DATA%" --standalone > "%BASEDIR%\data\logs\mysql.log" 2>&1
+call :ENSURE_HIDDEN_VBS
 
-echo %GREEN%[√] Apache iniciado%RESET% %GRAY%(PHP: %PHP_HOME%)%RESET%
-start "" /B "%APACHE_HOME%\bin\httpd.exe" -d "%APACHE_HOME%" -C "Define SRVROOT \"%APACHE_HOME_FWD%\"" -C "Define WWWROOT \"%WWW_HOME_FWD%\"" -C "Define PHPROOT \"%PHP_HOME_FWD%\"" -f "%APACHE_HOME%\conf\httpd.conf"
+REM --- Gera lancadores temporarios (evita gambiarra de aspas dentro do VBS) ---
+> "%TEMP%\phbro_mysql_launch.bat" (
+    echo @echo off
+    echo "%MYSQL_HOME%\bin\mysqld.exe" --defaults-file="%BASEDIR%my.ini" --basedir="%MYSQL_HOME%" --datadir="%MYSQL_DATA%" --standalone ^> "%BASEDIR%\data\logs\mysql.log" 2^>^&1
+)
+> "%TEMP%\phbro_apache_launch.bat" (
+    echo @echo off
+    echo "%APACHE_HOME%\bin\httpd.exe" -d "%APACHE_HOME%" -C "Define SRVROOT \"%APACHE_HOME_FWD%\"" -C "Define WWWROOT \"%WWW_HOME_FWD%\"" -C "Define PHPROOT \"%PHP_HOME_FWD%\"" -f "%APACHE_HOME%\conf\httpd.conf"
+)
+
+echo %GREEN%[√] MySQL  iniciado%RESET% %GRAY%(processo oculto)%RESET%
+cscript //nologo "%BASEDIR%hidden_run.vbs" "%TEMP%\phbro_mysql_launch.bat"
+
+echo %GREEN%[√] Apache iniciado%RESET% %GRAY%(PHP: %PHP_HOME%, processo oculto)%RESET%
+cscript //nologo "%BASEDIR%hidden_run.vbs" "%TEMP%\phbro_apache_launch.bat"
 
 echo.
 echo %GREEN%==========================================%RESET%
