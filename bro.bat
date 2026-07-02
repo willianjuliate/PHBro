@@ -99,7 +99,7 @@ echo %MAGENTA%██║     ██║  ██║██████╔╝██�
 echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝%RESET%
 echo %CYAN%Your PHP Development Buddy%RESET%
 echo.
-echo %BOLD%Uso:%RESET% bro [opcao]   
+echo %BOLD%Uso:%RESET% %~n0 [opcao]   
 echo.
 echo %BOLD%Opcoes disponiveis:%RESET%
 echo   %GREEN%--start%RESET%        Inicia Apache e MySQL (sem limpar execucoes anteriores)
@@ -110,16 +110,16 @@ echo   %CYAN%--status%RESET%       Mostra checklist do que esta rodando
 echo   %RED%--wipe-data%RESET%    Apaga a pasta data\ (reseta o banco MySQL do zero)
 echo   %BLUE%--php-select%RESET%   Escolhe/troca qual versao de PHP usar
 echo   %BLUE%--version, --v%RESET% Mostra a versao do script e dos componentes
-echo   %GRAY%--h, --help%RESET%    Mostra este menu de ajuda
+echo   %GRAY%--help, --h%RESET%    Mostra este menu de ajuda
 echo.
 echo %BOLD%Exemplos:%RESET%
-echo   %~nx0 --start
-echo   %~nx0 --start-clean
-echo   %~nx0 --restart
-echo   %~nx0 --status
-echo   %~nx0 --wipe-data
-echo   %~nx0 --php-select
-echo   %~nx0 --version
+echo   %~n0 --start
+echo   %~n0 --start-clean
+echo   %~n0 --restart
+echo   %~n0 --status
+echo   %~n0 --wipe-data
+echo   %~n0 --php-select
+echo   %~n0 --version
 echo.
 echo %BOLD%Enderecos apos o --start:%RESET%
 echo   Apache : %CYAN%http://localhost:8080%RESET%
@@ -286,14 +286,14 @@ echo.
 
 tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
 if %errorlevel%==0 (
-    echo %GREEN%[x] Apache   - rodando%RESET%
+    echo %GREEN%[√] Apache   - rodando%RESET%
 ) else (
     echo %RED%[ ] Apache   - parado%RESET%
 )
 
 tasklist /FI "IMAGENAME eq mysqld.exe" 2>nul | find /I "mysqld.exe" >nul
 if %errorlevel%==0 (
-    echo %GREEN%[x] MySQL    - rodando%RESET%
+    echo %GREEN%[√] MySQL    - rodando%RESET%
 ) else (
     echo %RED%[ ] MySQL    - parado%RESET%
 )
@@ -302,14 +302,14 @@ echo.
 echo %BOLD%Verificando portas...%RESET%
 netstat -ano | find "LISTENING" | find ":8080" >nul
 if %errorlevel%==0 (
-    echo %GREEN%[x] Porta 8080 - respondendo ^(Apache^)%RESET%
+    echo %GREEN%[√] Porta 8080 - respondendo ^(Apache^)%RESET%
 ) else (
     echo %RED%[ ] Porta 8080 - sem resposta%RESET%
 )
 
 netstat -ano | find "LISTENING" | find ":3306" >nul
 if %errorlevel%==0 (
-    echo %GREEN%[x] Porta 3306 - respondendo ^(MySQL^)%RESET%
+    echo %GREEN%[√] Porta 3306 - respondendo ^(MySQL^)%RESET%
 ) else (
     echo %RED%[ ] Porta 3306 - sem resposta%RESET%
 )
@@ -317,8 +317,8 @@ if %errorlevel%==0 (
 echo.
 echo %GRAY%──────────────────────────────────────────%RESET%
 echo   %BOLD%PHBro%RESET% %GRAY%v%SCRIPT_VERSION%%RESET%
-echo   %GRAY%Repositorio:%RESET% %CYAN%github.com/seu-usuario/devstack%RESET%
-echo   %GRAY%Contato    :%RESET% %CYAN%contato@seudominio.com%RESET%
+echo   %GRAY%Repositorio:%RESET% %CYAN%https://github.com/willianjuliate/PHBro%RESET%
+echo   %GRAY%Contato    :%RESET% %CYAN%contato@76sys.com.br%RESET%
 echo %GRAY%──────────────────────────────────────────%RESET%
 echo.
 goto :eof
@@ -381,10 +381,10 @@ if not exist "%MYSQL_DATA%\mysql" (
 
 if not exist "%BASEDIR%\data\logs" mkdir "%BASEDIR%\data\logs"
 
-echo %GREEN%[✓] MySQL iniciado%RESET%
+echo %GREEN%[√] MySQL  iniciado%RESET%
 start "" /B "%MYSQL_HOME%\bin\mysqld.exe" --defaults-file="%BASEDIR%my.ini" --basedir="%MYSQL_HOME%" --datadir="%MYSQL_DATA%" --standalone > "%BASEDIR%\data\logs\mysql.log" 2>&1
 
-echo %GREEN%[✓] Apache iniciado%RESET% %GRAY%(PHP: %PHP_HOME%)%RESET%
+echo %GREEN%[√] Apache iniciado%RESET% %GRAY%(PHP: %PHP_HOME%)%RESET%
 start "" /B "%APACHE_HOME%\bin\httpd.exe" -d "%APACHE_HOME%" -C "Define SRVROOT \"%APACHE_HOME_FWD%\"" -C "Define WWWROOT \"%WWW_HOME_FWD%\"" -C "Define PHPROOT \"%PHP_HOME_FWD%\"" -f "%APACHE_HOME%\conf\httpd.conf"
 
 echo.
@@ -439,12 +439,12 @@ echo %MAGENTA%██║     ██║  ██║██████╔╝██�
 echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝%RESET%
 echo %CYAN%Your PHP Development Buddy%RESET%
 echo.
-echo %GREEN%✔ Ambiente encerrado com sucesso.%RESET% Ate a proxima!
+echo %GREEN%√ Ambiente encerrado com sucesso.%RESET% Ate a proxima!
 echo.
 echo %GRAY%──────────────────────────────────────────%RESET%
-echo   %BOLD%devstack%RESET% %GRAY%v%SCRIPT_VERSION%%RESET%
-echo   %GRAY%Repositorio:%RESET% %CYAN%github.com/seu-usuario/devstack%RESET%
-echo   %GRAY%Contato    :%RESET% %CYAN%contato@seudominio.com%RESET%
+echo   %BOLD%PHBro%RESET% %GRAY%v%SCRIPT_VERSION%%RESET%
+echo   %GRAY%Repositorio:%RESET% %CYAN%https://github.com/willianjuliate/PHBro%RESET%
+echo   %GRAY%Contato    :%RESET% %CYAN%contato@76sys.com.br%RESET%
 echo %GRAY%──────────────────────────────────────────%RESET%
 echo.
 goto :eof
@@ -456,7 +456,7 @@ goto :eof
 call :CHECK_RUNNING
 if "%RUNNING%"=="1" (
     echo %RED%[ERRO] Pare os servicos antes de apagar os dados.%RESET%
-    echo Use "%~nx0 --stop" primeiro.
+    echo Use "%~n0 --stop" primeiro.
     goto :eof
 )
 
