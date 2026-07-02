@@ -15,13 +15,13 @@ set "MAGENTA=%ESC%[95m"
 set "CYAN=%ESC%[96m"
 set "GRAY=%ESC%[90m"
 
-set "BASEDIR=%~dp0"
-set "APACHE_HOME=%BASEDIR%apache\Apache24"
+set "BASEDIR=%~dp0bin\"
+set "APACHE_HOME=%BASEDIR%apache\httpd-2.4.68\Apache24"
 set "PHP_BASE=%BASEDIR%php"
 set "PHP_CONFIG=%BASEDIR%.php_version"
 set "MYSQL_HOME=%BASEDIR%mysql"
 set "MYSQL_DATA=%BASEDIR%data"
-set "WWW_HOME=%BASEDIR%www"
+set "WWW_HOME=%~dp0%www"
 set "SCRIPT_VERSION=1.0.0"
 
 REM Apache exige "/" em vez de "\" dentro do httpd.conf
@@ -209,8 +209,7 @@ echo.
 
 call :DETECT_PHP
 
-set "TMPVER=%TEMP%\devstack_ver_%RANDOM%.txt"
-
+set "TMPVER=%TEMP%\PHBro_ver_%RANDOM%.tmp"
 REM --- PHP ---
 if defined PHP_HOME (
     if exist "%PHP_HOME%\php.exe" (
@@ -218,7 +217,7 @@ if defined PHP_HOME (
         set "PHPVER="
         for /f "delims=" %%V in ('findstr /B "PHP " "%TMPVER%"') do set "PHPVER=%%V"
         for /f "tokens=1,2" %%A in ("!PHPVER!") do set "PHPVER=%%A %%B"
-        echo %GREEN%[PHP]%RESET%    !PHPVER! %GRAY%(pasta: !PHP_HOME!)%RESET%
+        echo %GREEN%[PHP]%RESET%    !PHPVER! %GRAY% [PATH: !PHP_HOME!]%RESET%
     ) else (
         echo %RED%[PHP]%RESET%    php.exe nao encontrado em "!PHP_HOME!"
     )
