@@ -109,7 +109,7 @@ Cada pasta deve conter diretamente os arquivos `php.exe`, `php.ini` e a pasta `e
 
 ### MySQL
 
-Baixe o ZIP do MySQL Community Server em: [link suspeito removido]
+Baixe o ZIP do MySQL Community Server em: [dev.mysql.com/downloads/](https://dev.mysql.com/downloads/mysql/)
 
 Extraia o conteúdo em: `bin/mysql`. A estrutura deve manter o caminho `bin/mysql/bin/mysqld.exe`.
 
