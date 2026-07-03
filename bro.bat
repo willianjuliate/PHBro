@@ -19,6 +19,10 @@ set "BASEDIR=%~dp0bin\"
 set "APACHE_HOME=%BASEDIR%apache\httpd-2.4.68\Apache24"
 set "PHP_BASE=%BASEDIR%php"
 set "PHP_CONFIG=%BASEDIR%.php_version"
+set "PORT_CONFIG=%BASEDIR%.apache_port"
+set "DOMAIN_CONFIG=%BASEDIR%.apache_domain"
+set "SSL_CONFIG=%BASEDIR%.apache_ssl"
+set "SSL_DIR=%APACHE_HOME%\conf\ssl"
 set "MYSQL_HOME=%BASEDIR%mysql"
 set "MYSQL_DATA=%BASEDIR%data"
 set "WWW_HOME=%~dp0%www"
@@ -84,6 +88,42 @@ if "%~1"=="--php-select" (
     goto :END
 )
 
+if "%~1"=="--port" (
+    set "OLD_PORT="
+    if exist "%PORT_CONFIG%" set /p OLD_PORT=<"%PORT_CONFIG%"
+    if exist "%PORT_CONFIG%" del /Q "%PORT_CONFIG%" >nul 2>&1
+    call :DETECT_PORT
+    if not defined APACHE_PORT (
+        if defined OLD_PORT (
+            >"%PORT_CONFIG%" echo !OLD_PORT!
+        )
+        echo %GRAY%Nenhuma alteracao foi feita.%RESET%
+        echo.
+        goto :END
+    )
+    echo.
+    echo %GREEN%Porta do Apache definida: !APACHE_PORT!%RESET%
+    echo.
+    call :OFFER_RESTART
+    goto :END
+)
+
+if "%~1"=="--domain" (
+    call :DETECT_DOMAIN
+    if defined APACHE_DOMAIN (
+        echo.
+        call :OFFER_RESTART
+    )
+    goto :END
+)
+
+if "%~1"=="--https" (
+    call :TOGGLE_SSL
+    echo.
+    call :OFFER_RESTART
+    goto :END
+)
+
 call :HELP
 goto :END
 
@@ -109,6 +149,9 @@ echo   %YELLOW%--restart%RESET%      Executa --stop e em seguida --start
 echo   %CYAN%--status%RESET%       Mostra checklist do que esta rodando
 echo   %RED%--wipe-data%RESET%    Apaga a pasta data\ (reseta o banco MySQL do zero)
 echo   %BLUE%--php-select%RESET%   Escolhe/troca qual versao de PHP usar
+echo   %BLUE%--port%RESET%         Escolhe/troca a porta do Apache
+echo   %BLUE%--domain%RESET%       Escolhe/troca o dominio local (ex: phbro.me), exige Admin
+echo   %BLUE%--https%RESET%        Liga/desliga HTTPS (certificado autoassinado)
 echo   %BLUE%--version, --v%RESET% Mostra a versao do script e dos componentes
 echo   %GRAY%--help, --h%RESET%    Mostra este menu de ajuda
 echo.
@@ -119,10 +162,19 @@ echo   %~n0 --restart
 echo   %~n0 --status
 echo   %~n0 --wipe-data
 echo   %~n0 --php-select
+echo   %~n0 --port
+echo   %~n0 --domain
+echo   %~n0 --https
 echo   %~n0 --version
 echo.
+call :LOAD_PORT
+call :LOAD_DOMAIN
+call :LOAD_SSL
 echo %BOLD%Enderecos apos o --start:%RESET%
-echo   Apache : %CYAN%http://localhost:8080%RESET%
+echo   Apache : %CYAN%http://%APACHE_DOMAIN%:%APACHE_PORT%%RESET%
+if "%SSL_ENABLED%"=="1" (
+    echo %CYAN%https://%APACHE_DOMAIN%%RESET%
+)
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(usuario root, sem senha^)
 echo.
 goto :eof
@@ -300,11 +352,12 @@ if %errorlevel%==0 (
 
 echo.
 echo %BOLD%Verificando portas...%RESET%
-netstat -ano | find "LISTENING" | find ":8080" >nul
+call :LOAD_PORT
+netstat -ano | find "LISTENING" | find ":%APACHE_PORT% " >nul
 if %errorlevel%==0 (
-    echo %GREEN%[√] Porta 8080 - respondendo ^(Apache^)%RESET%
+    echo %GREEN%[√] Porta %APACHE_PORT% - respondendo ^(Apache^)%RESET%
 ) else (
-    echo %RED%[ ] Porta 8080 - sem resposta%RESET%
+    echo %RED%[ ] Porta %APACHE_PORT% - sem resposta%RESET%
 )
 
 netstat -ano | find "LISTENING" | find ":3306" >nul
@@ -314,12 +367,360 @@ if %errorlevel%==0 (
     echo %RED%[ ] Porta 3306 - sem resposta%RESET%
 )
 
+call :LOAD_DOMAIN
+call :LOAD_SSL
+echo.
+echo %BOLD%Configuracao atual:%RESET%
+echo   Dominio : %CYAN%%APACHE_DOMAIN%%RESET%
+if "%SSL_ENABLED%"=="1" (
+    echo   HTTPS   : %GREEN%ativado%RESET%
+) else (
+    echo   HTTPS   : %GRAY%desativado%RESET%
+)
+
 echo.
 echo %GRAY%──────────────────────────────────────────%RESET%
 echo   %BOLD%PHBro%RESET% %GRAY%v%SCRIPT_VERSION%%RESET%
 echo   %GRAY%Repositorio:%RESET% %CYAN%https://github.com/willianjuliate/PHBro%RESET%
 echo   %GRAY%Contato    :%RESET% %CYAN%contato@76sys.com.br%RESET%
 echo %GRAY%──────────────────────────────────────────%RESET%
+echo.
+goto :eof
+
+:: =====================================================
+:: OFFER_RESTART - se Apache/MySQL estiverem rodando,
+:: oferece reiniciar para aplicar uma config nova (porta,
+:: dominio ou https). Usada por --port, --domain e --https.
+:: =====================================================
+:OFFER_RESTART
+call :CHECK_RUNNING
+if "!RUNNING!"=="1" (
+    echo %YELLOW%[AVISO] Apache e/ou MySQL ainda estao rodando com a configuracao antiga.%RESET%
+    set /p RESTART_NOW="Reiniciar agora para aplicar a mudanca? (S/N): "
+    if /I "!RESTART_NOW!"=="S" (
+        call :STOP
+        echo.
+        echo %CYAN%Aguardando liberar as portas...%RESET%
+        timeout /t 3 /nobreak >nul
+        call :START
+    ) else (
+        echo %GRAY%Ok, a configuracao antiga continua ativa ate voce rodar "%~n0 --restart".%RESET%
+        echo.
+    )
+)
+goto :eof
+
+:: =====================================================
+:: CHECK_ADMIN - detecta se o script esta rodando elevado
+:: (necessario para editar o hosts do Windows)
+:: =====================================================
+:CHECK_ADMIN
+set "IS_ADMIN=0"
+net session >nul 2>&1
+if %errorlevel%==0 set "IS_ADMIN=1"
+goto :eof
+
+:: =====================================================
+:: LOAD_DOMAIN - le o dominio salvo sem perguntar nada.
+:: Se nunca foi configurado, cai no padrao "localhost".
+:: =====================================================
+:LOAD_DOMAIN
+set "APACHE_DOMAIN=localhost"
+if exist "%DOMAIN_CONFIG%" (
+    set /p APACHE_DOMAIN=<"%DOMAIN_CONFIG%"
+)
+goto :eof
+
+:: =====================================================
+:: DETECT_DOMAIN - pergunta o dominio local do projeto,
+:: aponta ele para 127.0.0.1 no hosts do Windows e salva
+:: a escolha. Exige Administrador.
+:: =====================================================
+:DETECT_DOMAIN
+set "APACHE_DOMAIN="
+echo %CYAN%Dominio local do projeto%RESET%
+echo Sugestao: %BOLD%phbro.me%RESET%  ^(ou digite outro, ex: meuprojeto.me^)
+echo Deixe em branco para cancelar, ou digite "localhost" para voltar ao padrao.
+echo.
+set /p APACHE_DOMAIN="Dominio: "
+
+if not defined APACHE_DOMAIN (
+    echo %GRAY%Operacao cancelada.%RESET%
+    echo.
+    goto :eof
+)
+
+if /I "!APACHE_DOMAIN!"=="localhost" (
+    if exist "%DOMAIN_CONFIG%" del /Q "%DOMAIN_CONFIG%" >nul 2>&1
+    call :CHECK_ADMIN
+    if "!IS_ADMIN!"=="1" call :UPDATE_HOSTS_CLEAR
+    echo %GREEN%[Dominio] Voltando a usar "localhost".%RESET%
+    echo.
+    goto :eof
+)
+
+call :CHECK_ADMIN
+if not "!IS_ADMIN!"=="1" (
+    echo %RED%[ERRO] Preciso rodar como Administrador para editar o arquivo hosts do Windows.%RESET%
+    echo Feche este terminal e abra o %~n0 novamente com "Executar como administrador".
+    echo.
+    set "APACHE_DOMAIN="
+    goto :eof
+)
+
+call :UPDATE_HOSTS
+>"%DOMAIN_CONFIG%" echo !APACHE_DOMAIN!
+
+REM --- Se o SSL ja estava ativo, o certificado antigo nao serve mais pro novo dominio ---
+call :LOAD_SSL
+if "!SSL_ENABLED!"=="1" (
+    del /Q "%SSL_DIR%\phbro.crt" >nul 2>&1
+    del /Q "%SSL_DIR%\phbro.key" >nul 2>&1
+    echo %YELLOW%[HTTPS] Certificado antigo removido, sera gerado de novo para "!APACHE_DOMAIN!" no proximo --start.%RESET%
+)
+
+echo %GREEN%[Dominio] "!APACHE_DOMAIN!" apontando para 127.0.0.1 ^(hosts atualizado^).%RESET%
+echo.
+goto :eof
+
+:: =====================================================
+:: UPDATE_HOSTS - remove um bloco PHBro anterior (se
+:: existir) e adiciona o dominio atual no hosts do Windows
+:: =====================================================
+:UPDATE_HOSTS
+set "HOSTS_FILE=%WINDIR%\System32\drivers\etc\hosts"
+call :STRIP_HOSTS_BLOCK
+(
+    echo # PHBro inicio
+    echo 127.0.0.1    !APACHE_DOMAIN!
+    echo 127.0.0.1    www.!APACHE_DOMAIN!
+    echo # PHBro fim
+)>> "%HOSTS_FILE%"
+goto :eof
+
+:: =====================================================
+:: UPDATE_HOSTS_CLEAR - so remove o bloco PHBro do hosts
+:: (usado ao voltar para "localhost")
+:: =====================================================
+:UPDATE_HOSTS_CLEAR
+set "HOSTS_FILE=%WINDIR%\System32\drivers\etc\hosts"
+call :STRIP_HOSTS_BLOCK
+goto :eof
+
+:: --- helper interno: reescreve o hosts sem o bloco PHBro ---
+:STRIP_HOSTS_BLOCK
+if not exist "%HOSTS_FILE%" goto :eof
+set "SKIP=0"
+> "%TEMP%\phbro_hosts_new.txt" (
+    for /f "usebackq delims=" %%L in ("%HOSTS_FILE%") do (
+        set "LINE=%%L"
+        if "!LINE!"=="# PHBro inicio" set "SKIP=1"
+        if "!SKIP!"=="0" echo(!LINE!
+        if "!LINE!"=="# PHBro fim" set "SKIP=0"
+    )
+)
+copy /Y "%TEMP%\phbro_hosts_new.txt" "%HOSTS_FILE%" >nul
+del /Q "%TEMP%\phbro_hosts_new.txt" >nul 2>&1
+goto :eof
+
+:: =====================================================
+:: LOAD_SSL - le se o HTTPS esta ativo sem perguntar nada
+:: =====================================================
+:LOAD_SSL
+set "SSL_ENABLED=0"
+if exist "%SSL_CONFIG%" (
+    set /p SSL_ENABLED=<"%SSL_CONFIG%"
+)
+goto :eof
+
+:: =====================================================
+:: TOGGLE_SSL - liga/desliga o HTTPS. Ao ligar, gera (se
+:: preciso) um certificado autoassinado para o dominio atual.
+:: =====================================================
+:TOGGLE_SSL
+call :LOAD_SSL
+if "!SSL_ENABLED!"=="1" (
+    >"%SSL_CONFIG%" echo 0
+    echo %YELLOW%[HTTPS] Desativado. O Apache voltara a responder so por HTTP.%RESET%
+    goto :eof
+)
+
+call :ENSURE_SSL_CERT
+if not defined SSL_CERT_OK (
+    echo %RED%[ERRO] Nao foi possivel preparar o certificado. HTTPS nao foi ativado.%RESET%
+    goto :eof
+)
+
+>"%SSL_CONFIG%" echo 1
+echo %GREEN%[HTTPS] Ativado.%RESET%
+echo %YELLOW%O navegador vai mostrar um aviso de certificado nao confiavel (e autoassinado) - isso e esperado em ambiente de dev, so aceitar/prosseguir.%RESET%
+goto :eof
+
+:: =====================================================
+:: ENSURE_SSL_CERT - gera um certificado autoassinado com
+:: o openssl que acompanha o Apache, se ainda nao existir
+:: um para o dominio atual.
+:: =====================================================
+:ENSURE_SSL_CERT
+set "SSL_CERT_OK="
+set "OPENSSL_EXE=%APACHE_HOME%\bin\openssl.exe"
+
+echo %GRAY%Procurando openssl em: %OPENSSL_EXE%%RESET%
+
+if not exist "%OPENSSL_EXE%" (
+    echo %RED%[ERRO] openssl.exe nao encontrado nesse caminho.%RESET%
+    echo Esse binario normalmente acompanha o Apache para Windows, dentro da pasta bin\.
+    echo Se sua build do Apache nao vem com ele, baixe o OpenSSL para Windows e ajuste
+    echo a variavel OPENSSL_EXE no bro.bat para apontar pro openssl.exe correto.
+    goto :eof
+)
+
+if not exist "%SSL_DIR%" mkdir "%SSL_DIR%"
+
+if exist "%SSL_DIR%\phbro.crt" if exist "%SSL_DIR%\phbro.key" (
+    set "SSL_CERT_OK=1"
+    goto :eof
+)
+
+call :LOAD_DOMAIN
+echo %CYAN%Gerando certificado autoassinado para "!APACHE_DOMAIN!"...%RESET%
+set "SSL_ERR_LOG=%TEMP%\phbro_openssl_error.log"
+
+REM --- O openssl.exe de algumas builds do Apache vem com um caminho fixo
+REM     (ex: C:\Apache24\conf\openssl.cnf) gravado de fabrica, que nao existe
+REM     se o Apache estiver instalado em outra pasta. Forcamos o caminho certo.
+set "OPENSSL_CONF=%APACHE_HOME%\conf\openssl.cnf"
+if not exist "%OPENSSL_CONF%" (
+    set "OPENSSL_CONF=%SSL_DIR%\openssl.cnf"
+    if not exist "!OPENSSL_CONF!" (
+        echo %GRAY%Nenhum openssl.cnf encontrado no Apache, criando uma config minima...%RESET%
+        (
+            echo [req]
+            echo distinguished_name = req_distinguished_name
+            echo prompt = no
+            echo.
+            echo [req_distinguished_name]
+            echo CN = localhost
+        ) > "!OPENSSL_CONF!"
+    )
+)
+echo %GRAY%Usando openssl.cnf em: !OPENSSL_CONF!%RESET%
+
+"%OPENSSL_EXE%" req -x509 -nodes -newkey rsa:2048 -keyout "%SSL_DIR%\phbro.key" -out "%SSL_DIR%\phbro.crt" -days 825 -subj "/CN=!APACHE_DOMAIN!" -addext "subjectAltName=DNS:!APACHE_DOMAIN!,DNS:www.!APACHE_DOMAIN!,DNS:localhost,IP:127.0.0.1" 2>"%SSL_ERR_LOG%"
+set "OPENSSL_RC=!errorlevel!"
+
+if exist "%SSL_DIR%\phbro.crt" if exist "%SSL_DIR%\phbro.key" (
+    set "SSL_CERT_OK=1"
+    echo %GREEN%[SSL] Certificado gerado em "%SSL_DIR%".%RESET%
+    del /Q "%SSL_ERR_LOG%" >nul 2>&1
+) else (
+    echo %RED%[ERRO] Falha ao gerar o certificado com openssl ^(codigo !OPENSSL_RC!^).%RESET%
+    echo %GRAY%Saida do openssl:%RESET%
+    type "%SSL_ERR_LOG%" 2>nul
+    echo.
+    echo %GRAY%Tentando sem -addext ^(openssl mais antigo pode nao suportar essa opcao^)...%RESET%
+    "%OPENSSL_EXE%" req -x509 -nodes -newkey rsa:2048 -keyout "%SSL_DIR%\phbro.key" -out "%SSL_DIR%\phbro.crt" -days 825 -subj "/CN=!APACHE_DOMAIN!" 2>"%SSL_ERR_LOG%"
+    if exist "%SSL_DIR%\phbro.crt" if exist "%SSL_DIR%\phbro.key" (
+        set "SSL_CERT_OK=1"
+        echo %GREEN%[SSL] Certificado gerado ^(sem SAN^) em "%SSL_DIR%".%RESET%
+        del /Q "%SSL_ERR_LOG%" >nul 2>&1
+    ) else (
+        echo %RED%[ERRO] Ainda falhou. Saida do openssl:%RESET%
+        type "%SSL_ERR_LOG%" 2>nul
+    )
+)
+goto :eof
+
+:: =====================================================
+:: LOAD_PORT - le a porta salva sem perguntar nada.
+:: Usada por --help e --status. Se nunca foi escolhida,
+:: cai no padrao 8080.
+:: =====================================================
+:LOAD_PORT
+set "APACHE_PORT=8080"
+if exist "%PORT_CONFIG%" (
+    set /p APACHE_PORT=<"%PORT_CONFIG%"
+)
+goto :eof
+
+:: =====================================================
+:: DETECT_PORT - escolhe/valida a porta do Apache. Mostra
+:: as portas mais comuns com status livre/em uso e lembra
+:: a escolha em bin\.apache_port.
+:: =====================================================
+:DETECT_PORT
+set "APACHE_PORT="
+
+REM --- Se ja existe uma porta salva, usa direto ---
+if exist "%PORT_CONFIG%" (
+    set /p APACHE_PORT=<"%PORT_CONFIG%"
+)
+if defined APACHE_PORT goto :eof
+
+echo %CYAN%Verificando portas disponiveis...%RESET%
+echo.
+
+set "PORT_LIST=80 8080 8000 8081 8888 3000"
+set "PORT_COUNT=0"
+for %%P in (%PORT_LIST%) do (
+    set /a PORT_COUNT+=1
+    set "PORT_OPT!PORT_COUNT!=%%P"
+    netstat -ano | find "LISTENING" | find ":%%P " >nul
+    if !errorlevel!==0 (
+        set "PORT_STATUS!PORT_COUNT!=%RED%em uso%RESET%"
+    ) else (
+        set "PORT_STATUS!PORT_COUNT!=%GREEN%livre%RESET%"
+    )
+)
+
+for /l %%I in (1,1,!PORT_COUNT!) do (
+    echo   %BOLD%%%I^)%RESET% Porta !PORT_OPT%%I!   [!PORT_STATUS%%I!]
+)
+set /a CUSTOM_OPT=!PORT_COUNT!+1
+echo   %BOLD%!CUSTOM_OPT!^)%RESET% Digitar outra porta
+echo   %BOLD%0^)%RESET% Cancelar
+echo.
+set /p PORT_CHOICE="Escolha uma opcao: "
+
+if "!PORT_CHOICE!"=="0" (
+    echo %GRAY%Operacao cancelada.%RESET%
+    echo.
+    goto :eof
+)
+
+if "!PORT_CHOICE!"=="!CUSTOM_OPT!" (
+    set /p APACHE_PORT="Digite a porta desejada (vazio para cancelar): "
+    if not defined APACHE_PORT (
+        echo %GRAY%Operacao cancelada.%RESET%
+        echo.
+        goto :eof
+    )
+) else (
+    if defined PORT_OPT!PORT_CHOICE! (
+        set "APACHE_PORT=!PORT_OPT%PORT_CHOICE%!"
+    )
+)
+
+if not defined APACHE_PORT (
+    echo %RED%[ERRO] Opcao invalida.%RESET%
+    goto :eof
+)
+
+REM --- Confere se a porta escolhida esta livre ---
+netstat -ano | find "LISTENING" | find ":%APACHE_PORT% " >nul
+if !errorlevel!==0 (
+    echo %YELLOW%[AVISO] A porta %APACHE_PORT% ja esta em uso por outro processo.%RESET%
+    set /p CONFIRM_PORT="Usar mesmo assim? (S/N): "
+    if /I not "!CONFIRM_PORT!"=="S" (
+        set "APACHE_PORT="
+        echo %GRAY%Operacao cancelada.%RESET%
+        echo.
+        goto :eof
+    )
+)
+
+>"%PORT_CONFIG%" echo !APACHE_PORT!
+echo %GREEN%[Porta] Selecionada: !APACHE_PORT! (salva para as proximas execucoes)%RESET%
 echo.
 goto :eof
 
@@ -392,6 +793,36 @@ if not exist "%MYSQL_DATA%\mysql" (
     echo.
 )
 
+call :DETECT_PORT
+if not defined APACHE_PORT (
+    echo %RED%[ERRO] Nenhuma porta valida foi definida para o Apache.%RESET%
+    echo Use "%~n0 --port" para escolher uma porta.
+    goto :eof
+)
+
+netstat -ano | find "LISTENING" | find ":%APACHE_PORT% " >nul
+if !errorlevel!==0 (
+    echo %YELLOW%[AVISO] A porta %APACHE_PORT% parece estar em uso por outro processo.%RESET%
+    echo O Apache pode falhar ao subir. Use "%~n0 --port" para trocar de porta.
+    echo.
+)
+
+call :LOAD_DOMAIN
+call :LOAD_SSL
+
+set APACHE_EXTRA_ARGS=-C "Define APACHEDOMAIN %APACHE_DOMAIN%"
+
+if "!SSL_ENABLED!"=="1" (
+    call :ENSURE_SSL_CERT
+    if defined SSL_CERT_OK (
+        set "SSL_DIR_FWD=%SSL_DIR:\=/%"
+        set APACHE_EXTRA_ARGS=!APACHE_EXTRA_ARGS! -C "Define SSLDIR \"!SSL_DIR_FWD!\"" -D SSL
+    ) else (
+        echo %YELLOW%[AVISO] HTTPS ficou desativado nesta execucao por falta de certificado.%RESET%
+        set "SSL_ENABLED=0"
+    )
+)
+
 if not exist "%BASEDIR%\data\logs" mkdir "%BASEDIR%\data\logs"
 
 call :ENSURE_HIDDEN_VBS
@@ -403,7 +834,7 @@ REM --- Gera lancadores temporarios (evita gambiarra de aspas dentro do VBS) ---
 )
 > "%TEMP%\phbro_apache_launch.bat" (
     echo @echo off
-    echo "%APACHE_HOME%\bin\httpd.exe" -d "%APACHE_HOME%" -C "Define SRVROOT \"%APACHE_HOME_FWD%\"" -C "Define WWWROOT \"%WWW_HOME_FWD%\"" -C "Define PHPROOT \"%PHP_HOME_FWD%\"" -f "%APACHE_HOME%\conf\httpd.conf"
+    echo "%APACHE_HOME%\bin\httpd.exe" -d "%APACHE_HOME%" -C "Define SRVROOT \"%APACHE_HOME_FWD%\"" -C "Define WWWROOT \"%WWW_HOME_FWD%\"" -C "Define PHPROOT \"%PHP_HOME_FWD%\"" -C "Define APACHEPORT %APACHE_PORT%" !APACHE_EXTRA_ARGS! -f "%APACHE_HOME%\conf\httpd.conf"
 )
 
 echo %GREEN%[√] MySQL  iniciado%RESET% %GRAY%(processo oculto)%RESET%
@@ -415,7 +846,11 @@ cscript //nologo "%BASEDIR%hidden_run.vbs" "%TEMP%\phbro_apache_launch.bat"
 echo.
 echo %GREEN%==========================================%RESET%
 echo %GREEN%  Ambiente no ar!%RESET%
-echo   Apache : %CYAN%http://localhost:8080%RESET%
+echo   Apache : %CYAN%http://!APACHE_DOMAIN!:%APACHE_PORT%%RESET%
+if "!SSL_ENABLED!"=="1" ( 
+echo   SSL    : %CYAN%https://!APACHE_DOMAIN!%RESET%
+)
+
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(root sem senha^)
 echo %GREEN%==========================================%RESET%
 echo.
