@@ -26,7 +26,7 @@ set "SSL_DIR=%APACHE_HOME%\conf\ssl"
 set "MYSQL_HOME=%BASEDIR%mysql"
 set "MYSQL_DATA=%BASEDIR%data"
 set "WWW_HOME=%~dp0%www"
-set "SCRIPT_VERSION=1.0.0"
+set "SCRIPT_VERSION=1.0.2"
 
 REM Apache exige "/" em vez de "\" dentro do httpd.conf
 set "APACHE_HOME_FWD=%APACHE_HOME:\=/%"
