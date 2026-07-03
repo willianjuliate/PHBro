@@ -156,16 +156,11 @@ echo   %BLUE%--version, --v%RESET% Mostra a versao do script e dos componentes
 echo   %GRAY%--help, --h%RESET%    Mostra este menu de ajuda
 echo.
 echo %BOLD%Exemplos:%RESET%
-echo   %~n0 --start
-echo   %~n0 --start-clean
-echo   %~n0 --restart
+echo   %~n0 --v
 echo   %~n0 --status
-echo   %~n0 --wipe-data
-echo   %~n0 --php-select
-echo   %~n0 --port
-echo   %~n0 --domain
-echo   %~n0 --https
-echo   %~n0 --version
+echo   %~n0 --start
+echo   %~n0 --stop
+echo   %~n0 --restart
 echo.
 call :LOAD_PORT
 call :LOAD_DOMAIN
@@ -173,7 +168,7 @@ call :LOAD_SSL
 echo %BOLD%Enderecos apos o --start:%RESET%
 echo   Apache : %CYAN%http://%APACHE_DOMAIN%:%APACHE_PORT%%RESET%
 if "%SSL_ENABLED%"=="1" (
-    echo %CYAN%https://%APACHE_DOMAIN%%RESET%
+echo   SSL    : %CYAN%https://%APACHE_DOMAIN%%RESET%
 )
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(usuario root, sem senha^)
 echo.
@@ -336,6 +331,16 @@ echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝ 
 echo %CYAN%Your PHP Development Buddy%RESET%
 echo.
 
+call :LOAD_PORT
+call :LOAD_DOMAIN
+call :LOAD_SSL
+
+@REM if "!SSL_ENABLED!"=="1" (
+@REM     set "IS_HTTPS=https"
+@REM ) else (
+@REM     set "IS_HTTPS=http"
+@REM )
+
 tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
 if %errorlevel%==0 (
     echo %GREEN%[√] Apache   - rodando%RESET%
@@ -371,7 +376,8 @@ call :LOAD_DOMAIN
 call :LOAD_SSL
 echo.
 echo %BOLD%Configuracao atual:%RESET%
-echo   Dominio : %CYAN%%APACHE_DOMAIN%%RESET%
+
+echo   Dominio : %CYAN%!APACHE_DOMAIN!%RESET%
 if "%SSL_ENABLED%"=="1" (
     echo   HTTPS   : %GREEN%ativado%RESET%
 ) else (
@@ -541,7 +547,7 @@ goto :eof
 call :LOAD_SSL
 if "!SSL_ENABLED!"=="1" (
     >"%SSL_CONFIG%" echo 0
-    echo %YELLOW%[HTTPS] Desativado. O Apache voltara a responder so por HTTP.%RESET%
+    echo %YELLOW%[HTTPS] Desativado. O Apache voltara a responder so por HTTP.%RESET%    
     goto :eof
 )
 
@@ -945,4 +951,5 @@ goto :eof
 :: =====================================================
 :END
 pause
+cls
 exit /b
