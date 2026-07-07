@@ -18,15 +18,28 @@ set "GRAY=%ESC%[90m"
 set "BASEDIR=%~dp0bin\"
 set "APACHE_HOME=%BASEDIR%apache\httpd-2.4.68\Apache24"
 set "PHP_BASE=%BASEDIR%php"
-set "PHP_CONFIG=%BASEDIR%.php_version"
-set "PORT_CONFIG=%BASEDIR%.apache_port"
-set "DOMAIN_CONFIG=%BASEDIR%.apache_domain"
-set "SSL_CONFIG=%BASEDIR%.apache_ssl"
+set "CONFIG_DIR=%BASEDIR%config"
+set "PHP_CONFIG=%CONFIG_DIR%\.php_version"
+set "PORT_CONFIG=%CONFIG_DIR%\.apache_port"
+set "DOMAIN_CONFIG=%CONFIG_DIR%\.apache_domain"
+set "SSL_CONFIG=%CONFIG_DIR%\.apache_ssl"
 set "SSL_DIR=%APACHE_HOME%\conf\ssl"
 set "MYSQL_HOME=%BASEDIR%mysql"
 set "MYSQL_DATA=%BASEDIR%data"
-set "WWW_HOME=%~dp0%www"
+set "PROJECT_CONFIG=%CONFIG_DIR%\.apache_project"
+set "WWW_ROOT=%~dp0www"
+set "WWW_HOME=%WWW_ROOT%"
 set "SCRIPT_VERSION=1.0.2"
+
+REM --- Garante que a pasta de config existe, e migra arquivos de
+REM     configuracao gerados por versoes antigas (que ficavam soltos
+REM     direto em bin\) para dentro de bin\config\, sem perguntar nada.
+if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%" >nul 2>&1
+for %%F in (.php_version .apache_port .apache_domain .apache_ssl .apache_project) do (
+    if exist "%BASEDIR%%%F" if not exist "%CONFIG_DIR%\%%F" (
+        move /Y "%BASEDIR%%%F" "%CONFIG_DIR%\%%F" >nul 2>&1
+    )
+)
 
 REM Apache exige "/" em vez de "\" dentro do httpd.conf
 set "APACHE_HOME_FWD=%APACHE_HOME:\=/%"
@@ -42,6 +55,7 @@ if "%~1"=="--help" (
 )
 if "%~1"=="--start" (
     call :START
+    call :OPEN_BROWSER
     goto :END
 )
 if "%~1"=="--start-clean" (
@@ -108,6 +122,15 @@ if "%~1"=="--port" (
     goto :END
 )
 
+if "%~1"=="--project" (
+    call :DETECT_PROJECT
+    if defined PROJECT_CHANGED (
+        echo.
+        call :OFFER_RESTART
+    )
+    goto :END
+)
+
 if "%~1"=="--domain" (
     call :DETECT_DOMAIN
     if defined APACHE_DOMAIN (
@@ -121,6 +144,18 @@ if "%~1"=="--https" (
     call :TOGGLE_SSL
     echo.
     call :OFFER_RESTART
+    goto :END
+)
+
+if "%~1"=="--open" (
+    call :OPEN_BROWSER
+    call :STATUS
+    goto :END
+)
+
+if "%~1"=="--o" (
+    call :OPEN_BROWSER
+    call :STATUS
     goto :END
 )
 
@@ -150,27 +185,33 @@ echo   %CYAN%--status%RESET%       Mostra checklist do que esta rodando
 echo   %RED%--wipe-data%RESET%    Apaga a pasta data\ (reseta o banco MySQL do zero)
 echo   %BLUE%--php-select%RESET%   Escolhe/troca qual versao de PHP usar
 echo   %BLUE%--port%RESET%         Escolhe/troca a porta do Apache
+echo   %BLUE%--project%RESET%      Escolhe qual projeto de www\ o Apache vai servir (ou todos)
 echo   %BLUE%--domain%RESET%       Escolhe/troca o dominio local (ex: phbro.me), exige Admin
 echo   %BLUE%--https%RESET%        Liga/desliga HTTPS (certificado autoassinado)
+echo   %BLUE%--open, --o%RESET%         Abre o navegador padrao no endereco do projeto
 echo   %BLUE%--version, --v%RESET% Mostra a versao do script e dos componentes
 echo   %GRAY%--help, --h%RESET%    Mostra este menu de ajuda
 echo.
 echo %BOLD%Exemplos:%RESET%
 echo   %~n0 --v
-echo   %~n0 --status
 echo   %~n0 --start
 echo   %~n0 --stop
-echo   %~n0 --restart
 echo.
 call :LOAD_PORT
 call :LOAD_DOMAIN
 call :LOAD_SSL
+call :LOAD_PROJECT
 echo %BOLD%Enderecos apos o --start:%RESET%
 echo   Apache : %CYAN%http://%APACHE_DOMAIN%:%APACHE_PORT%%RESET%
 if "%SSL_ENABLED%"=="1" (
 echo   SSL    : %CYAN%https://%APACHE_DOMAIN%%RESET%
 )
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(usuario root, sem senha^)
+if defined PROJECT_NAME (
+echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+) else (
+echo   Projeto: %CYAN%Todos%RESET% %GRAY%[www\ inteiro - cada projeto em uma subpasta]%RESET%
+)
 echo.
 goto :eof
 
@@ -335,12 +376,6 @@ call :LOAD_PORT
 call :LOAD_DOMAIN
 call :LOAD_SSL
 
-@REM if "!SSL_ENABLED!"=="1" (
-@REM     set "IS_HTTPS=https"
-@REM ) else (
-@REM     set "IS_HTTPS=http"
-@REM )
-
 tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
 if %errorlevel%==0 (
     echo %GREEN%[√] Apache   - rodando%RESET%
@@ -374,6 +409,7 @@ if %errorlevel%==0 (
 
 call :LOAD_DOMAIN
 call :LOAD_SSL
+call :LOAD_PROJECT
 echo.
 echo %BOLD%Configuracao atual:%RESET%
 
@@ -382,6 +418,11 @@ if "%SSL_ENABLED%"=="1" (
     echo   HTTPS   : %GREEN%ativado%RESET%
 ) else (
     echo   HTTPS   : %GRAY%desativado%RESET%
+)
+if defined PROJECT_NAME (
+    echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+) else (
+    echo   Projeto : %CYAN%Todos%RESET% %GRAY%[www\ inteiro]%RESET%
 )
 
 echo.
@@ -413,6 +454,43 @@ if "!RUNNING!"=="1" (
         echo %GRAY%Ok, a configuracao antiga continua ativa ate voce rodar "%~n0 --restart".%RESET%
         echo.
     )
+)
+goto :eof
+
+:: =====================================================
+:: OPEN_BROWSER - abre o navegador padrao no endereco do
+:: projeto. Se HTTPS estiver ativo, pergunta qual protocolo;
+:: se so tiver HTTP, abre direto.
+:: =====================================================
+:OPEN_BROWSER
+call :LOAD_DOMAIN
+call :LOAD_PORT
+call :LOAD_SSL
+
+call :CHECK_RUNNING
+if "!RUNNING!"=="0" (
+    echo %YELLOW%[AVISO] Apache/MySQL nao parecem estar rodando. Use "%~n0 --start" primeiro.%RESET%
+    echo.
+)
+
+set "URL_HTTP=http://%APACHE_DOMAIN%:%APACHE_PORT%"
+set "URL_HTTPS=https://%APACHE_DOMAIN%"
+
+if "!SSL_ENABLED!"=="1" (
+    echo %CYAN%Qual endereco deseja abrir?%RESET%
+    echo   %BOLD%1^)%RESET% %URL_HTTP%
+    echo   %BOLD%2^)%RESET% %URL_HTTPS%
+    echo.
+    set /p OPEN_CHOICE="Escolha uma opcao (1/2): "
+    if "!OPEN_CHOICE!"=="2" (        
+        start "" "%URL_HTTPS%"
+        cls
+    ) else (       
+        start "" "%URL_HTTP%"
+        cls
+    )
+) else (    
+    start "" "%URL_HTTP%"
 )
 goto :eof
 
@@ -540,6 +618,107 @@ if exist "%SSL_CONFIG%" (
 goto :eof
 
 :: =====================================================
+:: LOAD_PROJECT - le o projeto salvo sem perguntar nada e
+:: ajusta WWW_HOME/WWW_HOME_FWD (raiz que o Apache vai usar).
+:: Se nenhum projeto foi escolhido (ou o salvo nao existe
+:: mais), o Apache serve a pasta www\ inteira (todos os
+:: projetos, cada um acessivel por /nome-da-pasta).
+:: =====================================================
+:LOAD_PROJECT
+set "PROJECT_NAME="
+if exist "%PROJECT_CONFIG%" (
+    set /p PROJECT_NAME=<"%PROJECT_CONFIG%"
+)
+
+if defined PROJECT_NAME (
+    if not exist "%WWW_ROOT%\!PROJECT_NAME!" (
+        set "PROJECT_NAME="
+        if exist "%PROJECT_CONFIG%" del /Q "%PROJECT_CONFIG%" >nul 2>&1
+    )
+)
+
+if defined PROJECT_NAME (
+    set "WWW_HOME=%WWW_ROOT%\!PROJECT_NAME!"
+) else (
+    set "WWW_HOME=%WWW_ROOT%"
+)
+set "WWW_HOME_FWD=%WWW_HOME:\=/%"
+goto :eof
+
+:: =====================================================
+:: DETECT_PROJECT - lista as pastas de projeto dentro de
+:: www\ e deixa escolher qual delas vira a raiz do Apache,
+:: ou voltar a servir todos os projetos (padrao). Lembra a
+:: escolha em bin\config\.apache_project.
+:: =====================================================
+:DETECT_PROJECT
+set "PROJECT_CHANGED="
+
+if not exist "%WWW_ROOT%" (
+    echo %RED%[ERRO] Pasta "%WWW_ROOT%" nao existe.%RESET%
+    goto :eof
+)
+
+set "PROJ_COUNT=0"
+for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
+    set /a PROJ_COUNT+=1
+    set "PROJ_OPT!PROJ_COUNT!=%%D"
+)
+
+if !PROJ_COUNT! equ 0 (
+    echo %RED%[ERRO] Nenhuma pasta de projeto encontrada em "%WWW_ROOT%".%RESET%
+    echo Crie uma subpasta para cada projeto dentro de "www\" ^(ex: www\meusite^).
+    goto :eof
+)
+
+call :LOAD_PROJECT
+set "CURRENT_PROJECT=!PROJECT_NAME!"
+if not defined CURRENT_PROJECT set "CURRENT_PROJECT=Todos os projetos (padrao)"
+
+echo %CYAN%Projetos encontrados em "www\":%RESET%
+echo.
+for /l %%I in (1,1,!PROJ_COUNT!) do (
+    echo   %BOLD%%%I^)%RESET% !PROJ_OPT%%I!
+)
+set /a ALL_OPT=!PROJ_COUNT!+1
+echo   %BOLD%!ALL_OPT!^)%RESET% Servir TODOS os projetos ^(padrao, www\ inteiro^)
+echo   %BOLD%0^)%RESET% Cancelar
+echo.
+echo %GRAY%Selecao atual: !CURRENT_PROJECT!%RESET%
+echo.
+set /p PROJ_CHOICE="Escolha uma opcao: "
+
+if "!PROJ_CHOICE!"=="0" (
+    echo %GRAY%Operacao cancelada.%RESET%
+    echo.
+    goto :eof
+)
+
+if "!PROJ_CHOICE!"=="!ALL_OPT!" (
+    if exist "%PROJECT_CONFIG%" del /Q "%PROJECT_CONFIG%" >nul 2>&1
+    echo.
+    echo %GREEN%[Projeto] Agora servindo TODOS os projetos de "www\" ^(padrao^).%RESET%
+    echo %GRAY%Cada projeto fica acessivel por /nome-da-pasta ^(ex: /meusite^).%RESET%
+    set "PROJECT_CHANGED=1"
+    goto :eof
+)
+
+set "PROJ_PICK="
+if defined PROJ_OPT!PROJ_CHOICE! set "PROJ_PICK=!PROJ_OPT%PROJ_CHOICE%!"
+
+if not defined PROJ_PICK (
+    echo %RED%[ERRO] Opcao invalida.%RESET%
+    goto :eof
+)
+
+>"%PROJECT_CONFIG%" echo !PROJ_PICK!
+echo.
+echo %GREEN%[Projeto] Selecionado: !PROJ_PICK!%RESET%
+echo %GRAY%A pasta "www\!PROJ_PICK!" vira a raiz do site ^(http://dominio:porta/ ja abre ela^).%RESET%
+set "PROJECT_CHANGED=1"
+goto :eof
+
+:: =====================================================
 :: TOGGLE_SSL - liga/desliga o HTTPS. Ao ligar, gera (se
 :: preciso) um certificado autoassinado para o dominio atual.
 :: =====================================================
@@ -652,7 +831,7 @@ goto :eof
 :: =====================================================
 :: DETECT_PORT - escolhe/valida a porta do Apache. Mostra
 :: as portas mais comuns com status livre/em uso e lembra
-:: a escolha em bin\.apache_port.
+:: a escolha em bin\config\.apache_port.
 :: =====================================================
 :DETECT_PORT
 set "APACHE_PORT="
@@ -795,7 +974,7 @@ if not exist "%MYSQL_DATA%\mysql" (
     echo %YELLOW%[MySQL] Primeira execucao detectada. Inicializando datadir...%RESET%
     if not exist "%MYSQL_DATA%" mkdir "%MYSQL_DATA%"
     "%MYSQL_HOME%\bin\mysqld.exe" --defaults-file="%BASEDIR%my.ini" --initialize-insecure --basedir="%MYSQL_HOME%" --datadir="%MYSQL_DATA%"
-    echo %GREEN%[MySQL] Datadir criado.%RESET% Usuario root sem senha ^(defina uma depois^).
+    echo %GREEN%[MySQL] Datadir criado.%RESET% Usuario root sem senha ^[defina uma depois^].
     echo.
 )
 
@@ -815,6 +994,13 @@ if !errorlevel!==0 (
 
 call :LOAD_DOMAIN
 call :LOAD_SSL
+call :LOAD_PROJECT
+
+if not exist "%WWW_HOME%" (
+    echo %RED%[ERRO] Pasta do projeto "%WWW_HOME%" nao existe mais.%RESET%
+    echo Use "%~n0 --project" para escolher outro projeto.
+    goto :eof
+)
 
 set APACHE_EXTRA_ARGS=-C "Define APACHEDOMAIN %APACHE_DOMAIN%"
 
@@ -843,10 +1029,10 @@ REM --- Gera lancadores temporarios (evita gambiarra de aspas dentro do VBS) ---
     echo "%APACHE_HOME%\bin\httpd.exe" -d "%APACHE_HOME%" -C "Define SRVROOT \"%APACHE_HOME_FWD%\"" -C "Define WWWROOT \"%WWW_HOME_FWD%\"" -C "Define PHPROOT \"%PHP_HOME_FWD%\"" -C "Define APACHEPORT %APACHE_PORT%" !APACHE_EXTRA_ARGS! -f "%APACHE_HOME%\conf\httpd.conf"
 )
 
-echo %GREEN%[√] MySQL  iniciado%RESET% %GRAY%(processo oculto)%RESET%
+echo %GREEN%[√] MySQL  iniciado%RESET% %GRAY%[MySQL: %MYSQL_HOME%]%RESET%
 cscript //nologo "%BASEDIR%hidden_run.vbs" "%TEMP%\phbro_mysql_launch.bat"
 
-echo %GREEN%[√] Apache iniciado%RESET% %GRAY%(PHP: %PHP_HOME%, processo oculto)%RESET%
+echo %GREEN%[√] Apache iniciado%RESET% %GRAY%[PHP: %PHP_HOME%]%RESET%
 cscript //nologo "%BASEDIR%hidden_run.vbs" "%TEMP%\phbro_apache_launch.bat"
 
 echo.
@@ -858,6 +1044,11 @@ echo   SSL    : %CYAN%https://!APACHE_DOMAIN!%RESET%
 )
 
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(root sem senha^)
+if defined PROJECT_NAME (
+echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+) else (
+echo   Projeto: %CYAN%Todos%RESET% %GRAY%[www\ inteiro - acesse cada um por /nome-da-pasta]%RESET%
+)
 echo %GREEN%==========================================%RESET%
 echo.
 goto :eof
@@ -896,6 +1087,7 @@ if errorlevel 1 (
     taskkill /F /IM mysqld.exe >nul 2>&1
 )
 
+cls
 echo.
 echo %MAGENTA%██████╗ ██╗  ██╗██████╗ ██████╗  ██████╗%RESET%
 echo %MAGENTA%██╔══██╗██║  ██║██╔══██╗██╔══██╗██╔═══██╗%RESET%
