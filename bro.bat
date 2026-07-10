@@ -27,6 +27,7 @@ set "SSL_DIR=%APACHE_HOME%\conf\ssl"
 set "MYSQL_HOME=%BASEDIR%mysql"
 set "MYSQL_DATA=%BASEDIR%data"
 set "PROJECT_CONFIG=%CONFIG_DIR%\.apache_project"
+set "DEBUG_DIR=%BASEDIR%debug"
 set "WWW_ROOT=%~dp0www"
 set "WWW_HOME=%WWW_ROOT%"
 set "SCRIPT_VERSION=1.0.2"
@@ -55,7 +56,6 @@ if "%~1"=="--help" (
 )
 if "%~1"=="--start" (
     call :START
-    call :OPEN_BROWSER
     goto :END
 )
 if "%~1"=="--start-clean" (
@@ -147,6 +147,19 @@ if "%~1"=="--https" (
     goto :END
 )
 
+if "%~1"=="--debug" (
+    call :CHECK_RUNNING
+    if "!RUNNING!"=="1" (
+        call :LOAD_DOMAIN
+        call :LOAD_PORT
+        call :OPEN_DEBUG_WINDOW
+    ) else (
+        echo %RED%[ERRO] O Apache nao esta rodando ainda.%RESET%
+        echo %GRAY%Rode "%~n0 --start" primeiro, depois "%~n0 --d" para reabrir a tela de debug.%RESET%
+    )
+    goto :END
+)
+
 if "%~1"=="--open" (
     call :OPEN_BROWSER
     call :STATUS
@@ -177,20 +190,21 @@ echo.
 echo %BOLD%Uso:%RESET% %~n0 [opcao]   
 echo.
 echo %BOLD%Opcoes disponiveis:%RESET%
-echo   %GREEN%--start%RESET%        Inicia Apache e MySQL (sem limpar execucoes anteriores)
-echo   %GREEN%--start-clean%RESET%  Limpa execucoes anteriores (mata processos e apaga logs) e inicia
-echo   %RED%--stop%RESET%         Encerra Apache e MySQL
-echo   %YELLOW%--restart%RESET%      Executa --stop e em seguida --start
-echo   %CYAN%--status%RESET%       Mostra checklist do que esta rodando
-echo   %RED%--wipe-data%RESET%    Apaga a pasta data\ (reseta o banco MySQL do zero)
-echo   %BLUE%--php-select%RESET%   Escolhe/troca qual versao de PHP usar
-echo   %BLUE%--port%RESET%         Escolhe/troca a porta do Apache
-echo   %BLUE%--project%RESET%      Escolhe qual projeto de www\ o Apache vai servir (ou todos)
-echo   %BLUE%--domain%RESET%       Escolhe/troca o dominio local (ex: phbro.me), exige Admin
-echo   %BLUE%--https%RESET%        Liga/desliga HTTPS (certificado autoassinado)
-echo   %BLUE%--open, --o%RESET%         Abre o navegador padrao no endereco do projeto
-echo   %BLUE%--version, --v%RESET% Mostra a versao do script e dos componentes
-echo   %GRAY%--help, --h%RESET%    Mostra este menu de ajuda
+echo   %GREEN%--start%RESET%          Inicia Apache e MySQL (sem limpar execucoes anteriores)
+echo   %GREEN%--start-clean%RESET%    Limpa execucoes anteriores (mata processos e apaga logs) e inicia
+echo   %RED%--stop%RESET%             Encerra Apache e MySQL
+echo   %YELLOW%--restart%RESET%       Executa --stop e em seguida --start
+echo   %CYAN%--status%RESET%          Mostra checklist do que esta rodando
+echo   %RED%--wipe-data%RESET%        Apaga a pasta data\ (reseta o banco MySQL do zero)
+echo   %BLUE%--php-select%RESET%      Escolhe/troca qual versao de PHP usar
+echo   %BLUE%--port%RESET%            Escolhe/troca a porta do Apache
+echo   %BLUE%--project%RESET%         Escolhe qual projeto de www\ o Apache vai servir (ou todos)
+echo   %BLUE%--debug%RESET%           Abre a tela de debug ^(requisicoes e erros ao vivo^), precisa do Apache ja rodando
+echo   %BLUE%--domain%RESET%          Escolhe/troca o dominio local (ex: phbro.me), exige Admin
+echo   %BLUE%--https%RESET%           Liga/desliga HTTPS (certificado autoassinado)
+echo   %BLUE%--open, --o%RESET%       Abre o navegador padrao no endereco do projeto
+echo   %BLUE%--version, --v%RESET%    Mostra a versao do script e dos componentes
+echo   %GRAY%--help, --h%RESET%       Mostra este menu de ajuda
 echo.
 echo %BOLD%Exemplos:%RESET%
 echo   %~n0 --v
@@ -817,6 +831,25 @@ if exist "%SSL_DIR%\phbro.crt" if exist "%SSL_DIR%\phbro.key" (
 goto :eof
 
 :: =====================================================
+:: OPEN_DEBUG_WINDOW - assume o terminal atual mostrando
+:: requisicoes e erros ao vivo (nao abre janela nova). So
+:: comeca de fato quando o Apache estiver respondendo.
+:: Volta ao normal quando o usuario der Ctrl+C. Chamada
+:: manualmente via "--d".
+:: =====================================================
+:OPEN_DEBUG_WINDOW
+if not exist "%DEBUG_DIR%\watch-logs.ps1" goto :eof
+if not exist "%APACHE_HOME%\logs" mkdir "%APACHE_HOME%\logs" >nul 2>&1
+
+echo.
+echo %CYAN%[Debug] Assumindo este terminal para mostrar requisicoes e erros...%RESET%
+echo %GRAY%Pressione Ctrl+C quando quiser voltar ao normal.%RESET%
+echo.
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DEBUG_DIR%\watch-logs.ps1" -AccessLog "%APACHE_HOME%\logs\access_log" -ErrorLog "%APACHE_HOME%\logs\error_log" -ApacheHost "%APACHE_DOMAIN%" -ApachePort "%APACHE_PORT%"
+goto :eof
+
+:: =====================================================
 :: LOAD_PORT - le a porta salva sem perguntar nada.
 :: Usada por --help e --status. Se nunca foi escolhida,
 :: cai no padrao 8080.
@@ -1051,6 +1084,9 @@ echo   Projeto: %CYAN%Todos%RESET% %GRAY%[www\ inteiro - acesse cada um por /nom
 )
 echo %GREEN%==========================================%RESET%
 echo.
+
+call :OPEN_BROWSER
+
 goto :eof
 
 :: =====================================================
