@@ -222,7 +222,11 @@ echo   SSL    : %CYAN%https://%APACHE_DOMAIN%%RESET%
 )
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(usuario root, sem senha^)
 if defined PROJECT_NAME (
+    if defined PROJECT_USES_PUBLIC (
+echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!\public]%RESET%
+    ) else (
 echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+    )
 ) else (
 echo   Projeto: %CYAN%Todos%RESET% %GRAY%[www\ inteiro - cada projeto em uma subpasta]%RESET%
 )
@@ -434,7 +438,11 @@ if "%SSL_ENABLED%"=="1" (
     echo   HTTPS   : %GRAY%desativado%RESET%
 )
 if defined PROJECT_NAME (
-    echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+    if defined PROJECT_USES_PUBLIC (
+        echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!\public]%RESET%
+    ) else (
+        echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+    )
 ) else (
     echo   Projeto : %CYAN%Todos%RESET% %GRAY%[www\ inteiro]%RESET%
 )
@@ -637,9 +645,13 @@ goto :eof
 :: Se nenhum projeto foi escolhido (ou o salvo nao existe
 :: mais), o Apache serve a pasta www\ inteira (todos os
 :: projetos, cada um acessivel por /nome-da-pasta).
+:: Se o projeto selecionado tiver uma subpasta "public" na
+:: raiz, serve a partir dela automaticamente (sem perguntar),
+:: como e comum em projetos Laravel/Slim/etc.
 :: =====================================================
 :LOAD_PROJECT
 set "PROJECT_NAME="
+set "PROJECT_USES_PUBLIC="
 if exist "%PROJECT_CONFIG%" (
     set /p PROJECT_NAME=<"%PROJECT_CONFIG%"
 )
@@ -653,6 +665,10 @@ if defined PROJECT_NAME (
 
 if defined PROJECT_NAME (
     set "WWW_HOME=%WWW_ROOT%\!PROJECT_NAME!"
+    if exist "!WWW_HOME!\public\" (
+        set "WWW_HOME=!WWW_HOME!\public"
+        set "PROJECT_USES_PUBLIC=1"
+    )
 ) else (
     set "WWW_HOME=%WWW_ROOT%"
 )
@@ -728,7 +744,11 @@ if not defined PROJ_PICK (
 >"%PROJECT_CONFIG%" echo !PROJ_PICK!
 echo.
 echo %GREEN%[Projeto] Selecionado: !PROJ_PICK!%RESET%
-echo %GRAY%A pasta "www\!PROJ_PICK!" vira a raiz do site ^(http://dominio:porta/ ja abre ela^).%RESET%
+if exist "%WWW_ROOT%\!PROJ_PICK!\public\" (
+    echo %GRAY%A pasta "www\!PROJ_PICK!\public" vira a raiz do site ^(publica detectada automaticamente^).%RESET%
+) else (
+    echo %GRAY%A pasta "www\!PROJ_PICK!" vira a raiz do site ^(http://dominio:porta/ ja abre ela^).%RESET%
+)
 set "PROJECT_CHANGED=1"
 goto :eof
 
@@ -1078,7 +1098,11 @@ echo   SSL    : %CYAN%https://!APACHE_DOMAIN!%RESET%
 
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(root sem senha^)
 if defined PROJECT_NAME (
+    if defined PROJECT_USES_PUBLIC (
+echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!\public]%RESET%
+    ) else (
 echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+    )
 ) else (
 echo   Projeto: %CYAN%Todos%RESET% %GRAY%[www\ inteiro - acesse cada um por /nome-da-pasta]%RESET%
 )
