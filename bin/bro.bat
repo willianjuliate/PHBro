@@ -15,7 +15,10 @@ set "MAGENTA=%ESC%[95m"
 set "CYAN=%ESC%[96m"
 set "GRAY=%ESC%[90m"
 
-set "BASEDIR=%~dp0bin\"
+REM --- Como o bro.bat agora mora dentro de bin\, a propria pasta do
+REM     script (%~dp0) ja E o BASEDIR; www\ fica um nivel acima dele.
+for %%W in ("%~dp0..") do set "PROJECT_ROOT=%%~fW"
+set "BASEDIR=%~dp0"
 set "APACHE_HOME=%BASEDIR%apache\httpd-2.4.68\Apache24"
 set "PHP_BASE=%BASEDIR%php"
 set "CONFIG_DIR=%BASEDIR%config"
@@ -27,8 +30,10 @@ set "SSL_DIR=%APACHE_HOME%\conf\ssl"
 set "MYSQL_HOME=%BASEDIR%mysql"
 set "MYSQL_DATA=%BASEDIR%data"
 set "PROJECT_CONFIG=%CONFIG_DIR%\.apache_project"
+set "MULTI_CONFIG=%CONFIG_DIR%\.apache_multidomain"
+set "VHOSTS_FILE=%CONFIG_DIR%\vhosts.conf"
 set "DEBUG_DIR=%BASEDIR%debug"
-set "WWW_ROOT=%~dp0www"
+set "WWW_ROOT=%PROJECT_ROOT%\www"
 set "WWW_HOME=%WWW_ROOT%"
 set "SCRIPT_VERSION=1.0.2"
 
@@ -131,7 +136,21 @@ if "%~1"=="--project" (
     goto :END
 )
 
-if "%~1"=="--domain" (
+if "%~1"=="--multi-domain" (
+    call :TOGGLE_MULTIDOMAIN
+    echo.
+    call :OFFER_RESTART
+    goto :END
+)
+
+if "%~1"=="--md" (
+    call :TOGGLE_MULTIDOMAIN
+    echo.
+    call :OFFER_RESTART
+    goto :END
+)
+
+if "%~1"=="--d" (
     call :DETECT_DOMAIN
     if defined APACHE_DOMAIN (
         echo.
@@ -155,7 +174,7 @@ if "%~1"=="--debug" (
         call :OPEN_DEBUG_WINDOW
     ) else (
         echo %RED%[ERRO] O Apache nao esta rodando ainda.%RESET%
-        echo %GRAY%Rode "%~n0 --start" primeiro, depois "%~n0 --d" para reabrir a tela de debug.%RESET%
+        echo %GRAY%Rode "%~n0 --start" primeiro, depois "%~n0 --debug" para reabrir a tela de debug.%RESET%
     )
     goto :END
 )
@@ -200,7 +219,8 @@ echo   %BLUE%--php-select%RESET%      Escolhe/troca qual versao de PHP usar
 echo   %BLUE%--port%RESET%            Escolhe/troca a porta do Apache
 echo   %BLUE%--project%RESET%         Escolhe qual projeto de www\ o Apache vai servir (ou todos)
 echo   %BLUE%--debug%RESET%           Abre a tela de debug ^(requisicoes e erros ao vivo^), precisa do Apache ja rodando
-echo   %BLUE%--domain%RESET%          Escolhe/troca o dominio local (ex: phbro.me), exige Admin
+echo   %BLUE%--multi-domain, --md%RESET%  Liga/desliga dominio automatico por pasta: cada pasta de www\ vira "pasta.bro"
+echo   %BLUE%--d%RESET%               Define um dominio local customizado ^(ex: meuprojeto.bro^), exige Admin
 echo   %BLUE%--https%RESET%           Liga/desliga HTTPS (certificado autoassinado)
 echo   %BLUE%--open, --o%RESET%       Abre o navegador padrao no endereco do projeto
 echo   %BLUE%--version, --v%RESET%    Mostra a versao do script e dos componentes
@@ -215,7 +235,12 @@ call :LOAD_PORT
 call :LOAD_DOMAIN
 call :LOAD_SSL
 call :LOAD_PROJECT
+call :LOAD_MULTIDOMAIN
 echo %BOLD%Enderecos apos o --start:%RESET%
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+echo   %GRAY%[Multi-dominio ativado - cada pasta de www\ tem seu proprio dominio]%RESET%
+    call :LIST_MULTIDOMAIN_DOMAINS
+) else (
 echo   Apache : %CYAN%http://%APACHE_DOMAIN%:%APACHE_PORT%%RESET%
 if "%SSL_ENABLED%"=="1" (
 echo   SSL    : %CYAN%https://%APACHE_DOMAIN%%RESET%
@@ -229,6 +254,7 @@ echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
     )
 ) else (
 echo   Projeto: %CYAN%Todos%RESET% %GRAY%[www\ inteiro - cada projeto em uma subpasta]%RESET%
+)
 )
 echo.
 goto :eof
@@ -428,23 +454,31 @@ if %errorlevel%==0 (
 call :LOAD_DOMAIN
 call :LOAD_SSL
 call :LOAD_PROJECT
+call :LOAD_MULTIDOMAIN
 echo.
 echo %BOLD%Configuracao atual:%RESET%
 
-echo   Dominio : %CYAN%!APACHE_DOMAIN!%RESET%
 if "%SSL_ENABLED%"=="1" (
     echo   HTTPS   : %GREEN%ativado%RESET%
 ) else (
     echo   HTTPS   : %GRAY%desativado%RESET%
 )
-if defined PROJECT_NAME (
-    if defined PROJECT_USES_PUBLIC (
-        echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!\public]%RESET%
-    ) else (
-        echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
-    )
+
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+    echo   Modo    : %CYAN%Multi-dominio%RESET% %GRAY%[cada pasta de www\ tem seu proprio dominio .bro]%RESET%
+    echo   Dominios:
+    call :LIST_MULTIDOMAIN_DOMAINS
 ) else (
-    echo   Projeto : %CYAN%Todos%RESET% %GRAY%[www\ inteiro]%RESET%
+    echo   Dominio : %CYAN%!APACHE_DOMAIN!%RESET%
+    if defined PROJECT_NAME (
+        if defined PROJECT_USES_PUBLIC (
+            echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!\public]%RESET%
+        ) else (
+            echo   Projeto : %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
+        )
+    ) else (
+        echo   Projeto : %CYAN%Todos%RESET% %GRAY%[www\ inteiro]%RESET%
+    )
 )
 
 echo.
@@ -459,7 +493,7 @@ goto :eof
 :: =====================================================
 :: OFFER_RESTART - se Apache/MySQL estiverem rodando,
 :: oferece reiniciar para aplicar uma config nova (porta,
-:: dominio ou https). Usada por --port, --domain e --https.
+:: dominio ou https). Usada por --port, --multi-domain e --https.
 :: =====================================================
 :OFFER_RESTART
 call :CHECK_RUNNING
@@ -482,17 +516,26 @@ goto :eof
 :: =====================================================
 :: OPEN_BROWSER - abre o navegador padrao no endereco do
 :: projeto. Se HTTPS estiver ativo, pergunta qual protocolo;
-:: se so tiver HTTP, abre direto.
+:: se so tiver HTTP, abre direto. No modo multi-dominio,
+:: deixa escolher qual dos dominios "pasta.bro" abrir.
 :: =====================================================
 :OPEN_BROWSER
 call :LOAD_DOMAIN
 call :LOAD_PORT
 call :LOAD_SSL
+call :LOAD_MULTIDOMAIN
 
 call :CHECK_RUNNING
 if "!RUNNING!"=="0" (
     echo %YELLOW%[AVISO] Apache/MySQL nao parecem estar rodando. Use "%~n0 --start" primeiro.%RESET%
     echo.
+)
+
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+    echo %GRAY%Modo multi-dominio ativo - escolha voce mesmo qual abrir no navegador.%RESET%
+    echo %GRAY%Veja a lista de dominios com "%~n0 --status" ou "%~n0 --start".%RESET%
+    echo.
+    goto :eof
 )
 
 set "URL_HTTP=http://%APACHE_DOMAIN%:%APACHE_PORT%"
@@ -518,12 +561,20 @@ goto :eof
 
 :: =====================================================
 :: CHECK_ADMIN - detecta se o script esta rodando elevado
-:: (necessario para editar o hosts do Windows)
+:: (necessario para editar o hosts do Windows). Usa o nivel
+:: de integridade do token via "whoami /groups" (nao depende
+:: de nenhum servico do Windows estar ativo); "net session"
+:: fica como checagem extra de seguranca.
 :: =====================================================
 :CHECK_ADMIN
 set "IS_ADMIN=0"
-net session >nul 2>&1
-if %errorlevel%==0 set "IS_ADMIN=1"
+whoami /groups 2>nul | find "S-1-16-12288" >nul
+if %errorlevel%==0 (
+    set "IS_ADMIN=1"
+) else (
+    net session >nul 2>&1
+    if %errorlevel%==0 set "IS_ADMIN=1"
+)
 goto :eof
 
 :: =====================================================
@@ -538,14 +589,16 @@ if exist "%DOMAIN_CONFIG%" (
 goto :eof
 
 :: =====================================================
-:: DETECT_DOMAIN - pergunta o dominio local do projeto,
-:: aponta ele para 127.0.0.1 no hosts do Windows e salva
-:: a escolha. Exige Administrador.
+:: DETECT_DOMAIN - pergunta um dominio local customizado
+:: (ex: meuprojeto.bro), aponta ele para 127.0.0.1 no hosts
+:: do Windows e salva a escolha. Usado pelo "--d". Vale como
+:: dominio "fixo" quando o multi-dominio (--multi-domain)
+:: esta desligado; exige Administrador para editar o hosts.
 :: =====================================================
 :DETECT_DOMAIN
 set "APACHE_DOMAIN="
-echo %CYAN%Dominio local do projeto%RESET%
-echo Sugestao: %BOLD%phbro.me%RESET%  ^(ou digite outro, ex: meuprojeto.me^)
+echo %CYAN%Dominio local customizado%RESET%
+echo Sugestao: %BOLD%meuprojeto.bro%RESET%  ^(escolha o nome que quiser^)
 echo Deixe em branco para cancelar, ou digite "localhost" para voltar ao padrao.
 echo.
 set /p APACHE_DOMAIN="Dominio: "
@@ -559,7 +612,7 @@ if not defined APACHE_DOMAIN (
 if /I "!APACHE_DOMAIN!"=="localhost" (
     if exist "%DOMAIN_CONFIG%" del /Q "%DOMAIN_CONFIG%" >nul 2>&1
     call :CHECK_ADMIN
-    if "!IS_ADMIN!"=="1" call :UPDATE_HOSTS_CLEAR
+    if "!IS_ADMIN!"=="1" call :CLEAR_DOMAIN_HOST
     echo %GREEN%[Dominio] Voltando a usar "localhost".%RESET%
     echo.
     goto :eof
@@ -574,7 +627,7 @@ if not "!IS_ADMIN!"=="1" (
     goto :eof
 )
 
-call :UPDATE_HOSTS
+call :SYNC_DOMAIN_HOST
 >"%DOMAIN_CONFIG%" echo !APACHE_DOMAIN!
 
 REM --- Se o SSL ja estava ativo, o certificado antigo nao serve mais pro novo dominio ---
@@ -586,47 +639,52 @@ if "!SSL_ENABLED!"=="1" (
 )
 
 echo %GREEN%[Dominio] "!APACHE_DOMAIN!" apontando para 127.0.0.1 ^(hosts atualizado^).%RESET%
+call :LOAD_MULTIDOMAIN
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+    echo %GRAY%^(O modo multi-dominio esta ativo - esse dominio so vale como fallback ate voce desligar "--multi-domain"^)%RESET%
+)
 echo.
 goto :eof
 
 :: =====================================================
-:: UPDATE_HOSTS - remove um bloco PHBro anterior (se
-:: existir) e adiciona o dominio atual no hosts do Windows
+:: SYNC_DOMAIN_HOST - remove um bloco PHBro-Domain anterior
+:: (se existir) e adiciona o dominio customizado atual no
+:: hosts do Windows. Exige Administrador.
 :: =====================================================
-:UPDATE_HOSTS
+:SYNC_DOMAIN_HOST
 set "HOSTS_FILE=%WINDIR%\System32\drivers\etc\hosts"
-call :STRIP_HOSTS_BLOCK
+call :STRIP_HOSTS_BLOCK_DOMAIN
 (
-    echo # PHBro inicio
+    echo # PHBro-Domain inicio
     echo 127.0.0.1    !APACHE_DOMAIN!
     echo 127.0.0.1    www.!APACHE_DOMAIN!
-    echo # PHBro fim
+    echo # PHBro-Domain fim
 )>> "%HOSTS_FILE%"
 goto :eof
 
 :: =====================================================
-:: UPDATE_HOSTS_CLEAR - so remove o bloco PHBro do hosts
-:: (usado ao voltar para "localhost")
+:: CLEAR_DOMAIN_HOST - so remove o bloco PHBro-Domain do
+:: hosts (usado ao voltar para "localhost")
 :: =====================================================
-:UPDATE_HOSTS_CLEAR
+:CLEAR_DOMAIN_HOST
 set "HOSTS_FILE=%WINDIR%\System32\drivers\etc\hosts"
-call :STRIP_HOSTS_BLOCK
+call :STRIP_HOSTS_BLOCK_DOMAIN
 goto :eof
 
-:: --- helper interno: reescreve o hosts sem o bloco PHBro ---
-:STRIP_HOSTS_BLOCK
+:: --- helper interno: reescreve o hosts sem o bloco PHBro-Domain ---
+:STRIP_HOSTS_BLOCK_DOMAIN
 if not exist "%HOSTS_FILE%" goto :eof
 set "SKIP=0"
-> "%TEMP%\phbro_hosts_new.txt" (
+> "%TEMP%\phbro_hosts_domain_new.txt" (
     for /f "usebackq delims=" %%L in ("%HOSTS_FILE%") do (
         set "LINE=%%L"
-        if "!LINE!"=="# PHBro inicio" set "SKIP=1"
+        if "!LINE!"=="# PHBro-Domain inicio" set "SKIP=1"
         if "!SKIP!"=="0" echo(!LINE!
-        if "!LINE!"=="# PHBro fim" set "SKIP=0"
+        if "!LINE!"=="# PHBro-Domain fim" set "SKIP=0"
     )
 )
-copy /Y "%TEMP%\phbro_hosts_new.txt" "%HOSTS_FILE%" >nul
-del /Q "%TEMP%\phbro_hosts_new.txt" >nul 2>&1
+copy /Y "%TEMP%\phbro_hosts_domain_new.txt" "%HOSTS_FILE%" >nul
+del /Q "%TEMP%\phbro_hosts_domain_new.txt" >nul 2>&1
 goto :eof
 
 :: =====================================================
@@ -683,6 +741,13 @@ goto :eof
 :: =====================================================
 :DETECT_PROJECT
 set "PROJECT_CHANGED="
+
+call :LOAD_MULTIDOMAIN
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+    echo %YELLOW%[AVISO] O modo multi-dominio esta ativo - cada pasta de www\ ja tem seu proprio dominio ^(pasta.bro^).%RESET%
+    echo %GRAY%A selecao de projeto abaixo so vale como fallback ^(acesso direto por IP/porta^). Use "%~n0 --multi-domain" para desativar esse modo.%RESET%
+    echo.
+)
 
 if not exist "%WWW_ROOT%" (
     echo %RED%[ERRO] Pasta "%WWW_ROOT%" nao existe.%RESET%
@@ -745,11 +810,197 @@ if not defined PROJ_PICK (
 echo.
 echo %GREEN%[Projeto] Selecionado: !PROJ_PICK!%RESET%
 if exist "%WWW_ROOT%\!PROJ_PICK!\public\" (
-    echo %GRAY%A pasta "www\!PROJ_PICK!\public" vira a raiz do site ^(publica detectada automaticamente^).%RESET%
+    echo %GRAY%A pasta "www\!PROJ_PICK!\public" vira a raiz do site.%RESET%
 ) else (
-    echo %GRAY%A pasta "www\!PROJ_PICK!" vira a raiz do site ^(http://dominio:porta/ ja abre ela^).%RESET%
+    echo %GRAY%A pasta "www\!PROJ_PICK!" vira a raiz do site.%RESET%
+)
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+    echo %GRAY%^(Modo multi-dominio ativo - esse projeto so vale como fallback, o dominio real ja e "!PROJ_PICK!.bro"^)%RESET%
 )
 set "PROJECT_CHANGED=1"
+goto :eof
+
+:: =====================================================
+:: LOAD_MULTIDOMAIN - le se o modo multi-dominio esta ativo
+:: sem perguntar nada. Padrao: desativado.
+:: =====================================================
+:LOAD_MULTIDOMAIN
+set "MULTIDOMAIN_ENABLED=0"
+if exist "%MULTI_CONFIG%" (
+    set /p MULTIDOMAIN_ENABLED=<"%MULTI_CONFIG%"
+)
+goto :eof
+
+:: =====================================================
+:: TOGGLE_MULTIDOMAIN - liga/desliga o modo multi-projeto.
+:: Ligado, cada pasta em www\ vira um dominio "nome.bro"
+:: proprio, todos servidos ao mesmo tempo na mesma porta.
+:: Exige Administrador para atualizar o hosts do Windows.
+:: =====================================================
+:TOGGLE_MULTIDOMAIN
+call :LOAD_MULTIDOMAIN
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+    >"%MULTI_CONFIG%" echo 0
+    call :CHECK_ADMIN
+    if "!IS_ADMIN!"=="1" (
+        call :CLEAR_MULTIDOMAIN_HOSTS
+    ) else (
+        echo %YELLOW%[AVISO] Nao estou como Administrador, entao as entradas antigas de "*.bro" ficaram no hosts.%RESET%
+        echo %GRAY%Rode "%~n0 --multi-domain" como Administrador depois para limpar.%RESET%
+    )
+    echo %YELLOW%[Multi-dominio] Desativado. Volta a servir um unico projeto/raiz ^(veja "%~n0 --project"^).%RESET%
+    goto :eof
+)
+
+call :CHECK_ADMIN
+if not "!IS_ADMIN!"=="1" (
+    echo %RED%[ERRO] Preciso rodar como Administrador para editar o arquivo hosts do Windows.%RESET%
+    echo Feche este terminal e abra o %~n0 novamente com "Executar como administrador".
+    echo.
+    goto :eof
+)
+
+if not exist "%WWW_ROOT%" (
+    echo %RED%[ERRO] Pasta "%WWW_ROOT%" nao existe.%RESET%
+    goto :eof
+)
+
+set "MULTI_PROJ_COUNT=0"
+for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do set /a MULTI_PROJ_COUNT+=1
+if !MULTI_PROJ_COUNT! equ 0 (
+    echo %RED%[ERRO] Nenhuma pasta de projeto encontrada em "%WWW_ROOT%".%RESET%
+    echo Crie uma subpasta para cada projeto dentro de "www\" ^(ex: www\bmg, www\market^).
+    goto :eof
+)
+
+>"%MULTI_CONFIG%" echo 1
+echo %GREEN%[Multi-dominio] Ativado.%RESET%
+echo %GRAY%Cada pasta em "www\" vira um dominio proprio, sempre terminando em ".bro":%RESET%
+echo.
+call :LOAD_PORT
+call :LOAD_SSL
+call :LIST_MULTIDOMAIN_DOMAINS
+call :SYNC_MULTIDOMAIN_HOSTS
+goto :eof
+
+:: =====================================================
+:: LIST_MULTIDOMAIN_DOMAINS - imprime a lista de dominios
+:: que serao gerados a partir das pastas de www\ (nome.bro),
+:: com http/https na frente e indicando se cada um serve a
+:: partir de public\ ou nao. Espera APACHE_PORT/SSL_ENABLED
+:: ja carregados (LOAD_PORT/LOAD_SSL) antes de chamar.
+:: =====================================================
+:LIST_MULTIDOMAIN_DOMAINS
+for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
+    if exist "%WWW_ROOT%\%%D\public\" (
+        echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D\public]%RESET%
+    ) else (
+        echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D]%RESET%
+    )
+    if "!SSL_ENABLED!"=="1" (
+        echo   %CYAN%https://%%D.bro%RESET%
+    )
+)
+goto :eof
+
+:: =====================================================
+:: GENERATE_VHOSTS - gera bin\config\vhosts.conf com um
+:: <VirtualHost> por pasta de www\ (dominio "pasta.bro"),
+:: respeitando public\ quando existir. Se HTTPS estiver
+:: ativo, gera tambem o bloco :443 para cada dominio,
+:: reaproveitando o certificado autoassinado do PHBro.
+:: =====================================================
+:GENERATE_VHOSTS
+(
+    echo # Gerado automaticamente pelo PHBro em cada --start. NAO EDITE A MAO.
+    echo # Um dominio "pasta.bro" por subpasta de www\
+) > "%VHOSTS_FILE%"
+
+for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
+    set "MDOM_PROJ=%%D"
+    set "MDOM_ROOT=%WWW_ROOT%\!MDOM_PROJ!"
+    if exist "!MDOM_ROOT!\public\" set "MDOM_ROOT=!MDOM_ROOT!\public"
+    set "MDOM_ROOT_FWD=!MDOM_ROOT:\=/!"
+    (
+        echo(
+        echo ^<VirtualHost *:%APACHE_PORT%^>
+        echo     ServerName !MDOM_PROJ!.bro
+        echo     ServerAlias www.!MDOM_PROJ!.bro
+        echo     DocumentRoot "!MDOM_ROOT_FWD!"
+        echo     ^<Directory "!MDOM_ROOT_FWD!"^>
+        echo         AllowOverride All
+        echo         Require all granted
+        echo     ^</Directory^>
+        echo ^</VirtualHost^>
+    ) >> "%VHOSTS_FILE%"
+
+    if "!SSL_ENABLED!"=="1" if defined SSL_CERT_OK (
+        (
+            echo(
+            echo ^<VirtualHost *:443^>
+            echo     ServerName !MDOM_PROJ!.bro
+            echo     ServerAlias www.!MDOM_PROJ!.bro
+            echo     DocumentRoot "!MDOM_ROOT_FWD!"
+            echo     ^<Directory "!MDOM_ROOT_FWD!"^>
+            echo         AllowOverride All
+            echo         Require all granted
+            echo     ^</Directory^>
+            echo     SSLEngine on
+            echo     SSLCertificateFile "!SSL_DIR_FWD!/phbro.crt"
+            echo     SSLCertificateKeyFile "!SSL_DIR_FWD!/phbro.key"
+            echo ^</VirtualHost^>
+        ) >> "%VHOSTS_FILE%"
+    )
+)
+goto :eof
+
+:: =====================================================
+:: SYNC_MULTIDOMAIN_HOSTS - reescreve o bloco "PHBro-Multi"
+:: do hosts do Windows com um dominio por pasta de www\.
+:: Se nao estiver como Administrador, avisa e nao mexe.
+:: =====================================================
+:SYNC_MULTIDOMAIN_HOSTS
+call :CHECK_ADMIN
+if not "!IS_ADMIN!"=="1" (
+    echo %YELLOW%[AVISO] Nao estou como Administrador - nao posso atualizar o hosts do Windows.%RESET%
+    echo %GRAY%Os dominios ".bro" podem nao resolver ate voce rodar o %~n0 como Administrador ao menos uma vez.%RESET%
+    goto :eof
+)
+set "HOSTS_FILE=%WINDIR%\System32\drivers\etc\hosts"
+call :STRIP_HOSTS_BLOCK_MULTI
+(
+    echo # PHBro-Multi inicio
+    for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
+        echo 127.0.0.1    %%D.bro
+        echo 127.0.0.1    www.%%D.bro
+    )
+    echo # PHBro-Multi fim
+)>> "%HOSTS_FILE%"
+goto :eof
+
+:: =====================================================
+:: CLEAR_MULTIDOMAIN_HOSTS - so remove o bloco PHBro-Multi
+:: do hosts (usado ao desativar o modo multi-dominio)
+:: =====================================================
+:CLEAR_MULTIDOMAIN_HOSTS
+set "HOSTS_FILE=%WINDIR%\System32\drivers\etc\hosts"
+call :STRIP_HOSTS_BLOCK_MULTI
+goto :eof
+
+:: --- helper interno: reescreve o hosts sem o bloco PHBro-Multi ---
+:STRIP_HOSTS_BLOCK_MULTI
+if not exist "%HOSTS_FILE%" goto :eof
+set "SKIP=0"
+> "%TEMP%\phbro_hosts_multi_new.txt" (
+    for /f "usebackq delims=" %%L in ("%HOSTS_FILE%") do (
+        set "LINE=%%L"
+        if "!LINE!"=="# PHBro-Multi inicio" set "SKIP=1"
+        if "!SKIP!"=="0" echo(!LINE!
+        if "!LINE!"=="# PHBro-Multi fim" set "SKIP=0"
+    )
+)
+copy /Y "%TEMP%\phbro_hosts_multi_new.txt" "%HOSTS_FILE%" >nul
+del /Q "%TEMP%\phbro_hosts_multi_new.txt" >nul 2>&1
 goto :eof
 
 :: =====================================================
@@ -855,7 +1106,7 @@ goto :eof
 :: requisicoes e erros ao vivo (nao abre janela nova). So
 :: comeca de fato quando o Apache estiver respondendo.
 :: Volta ao normal quando o usuario der Ctrl+C. Chamada
-:: manualmente via "--d".
+:: manualmente via "--debug".
 :: =====================================================
 :OPEN_DEBUG_WINDOW
 if not exist "%DEBUG_DIR%\watch-logs.ps1" goto :eof
@@ -988,6 +1239,7 @@ echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝ 
 echo %CYAN%Your PHP Development Buddy%RESET%
 echo.
 
+call :CHECK_ADMIN
 call :CHECK_RUNNING
 if "%RUNNING%"=="1" (
     echo.
@@ -1048,6 +1300,7 @@ if !errorlevel!==0 (
 call :LOAD_DOMAIN
 call :LOAD_SSL
 call :LOAD_PROJECT
+call :LOAD_MULTIDOMAIN
 
 if not exist "%WWW_HOME%" (
     echo %RED%[ERRO] Pasta do projeto "%WWW_HOME%" nao existe mais.%RESET%
@@ -1066,6 +1319,13 @@ if "!SSL_ENABLED!"=="1" (
         echo %YELLOW%[AVISO] HTTPS ficou desativado nesta execucao por falta de certificado.%RESET%
         set "SSL_ENABLED=0"
     )
+)
+
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+    call :GENERATE_VHOSTS
+    call :SYNC_MULTIDOMAIN_HOSTS
+    set "VHOSTS_FILE_FWD=%VHOSTS_FILE:\=/%"
+    set APACHE_EXTRA_ARGS=!APACHE_EXTRA_ARGS! -C "Include \"!VHOSTS_FILE_FWD!\""
 )
 
 if not exist "%BASEDIR%\data\logs" mkdir "%BASEDIR%\data\logs"
@@ -1091,12 +1351,27 @@ cscript //nologo "%BASEDIR%hidden_run.vbs" "%TEMP%\phbro_apache_launch.bat"
 echo.
 echo %GREEN%==========================================%RESET%
 echo %GREEN%  Ambiente no ar!%RESET%
+if "!MULTIDOMAIN_ENABLED!"=="1" (
+echo   %GRAY%[Multi-dominio ativado - cada pasta de www\ tem seu proprio dominio]%RESET%
+    for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
+        if exist "%WWW_ROOT%\%%D\public\" (
+echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D\public]%RESET%
+        ) else (
+echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D]%RESET%
+        )
+        if "!SSL_ENABLED!"=="1" (
+echo   %CYAN%https://%%D.bro%RESET%
+        )
+    )
+) else (
 echo   Apache : %CYAN%http://!APACHE_DOMAIN!:%APACHE_PORT%%RESET%
 if "!SSL_ENABLED!"=="1" ( 
 echo   SSL    : %CYAN%https://!APACHE_DOMAIN!%RESET%
 )
+)
 
 echo   MySQL  : %CYAN%127.0.0.1:3306%RESET% ^(root sem senha^)
+if "!MULTIDOMAIN_ENABLED!"=="0" (
 if defined PROJECT_NAME (
     if defined PROJECT_USES_PUBLIC (
 echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!\public]%RESET%
@@ -1105,6 +1380,10 @@ echo   Projeto: %CYAN%!PROJECT_NAME!%RESET% %GRAY%[www\!PROJECT_NAME!]%RESET%
     )
 ) else (
 echo   Projeto: %CYAN%Todos%RESET% %GRAY%[www\ inteiro - acesse cada um por /nome-da-pasta]%RESET%
+)
+)
+if "!IS_ADMIN!"=="1" (
+echo   %YELLOW%[Aviso] Rodando como Administrador - pra encerrar depois, use "--stop" tambem como Administrador.%RESET%
 )
 echo %GREEN%==========================================%RESET%
 echo.
@@ -1145,6 +1424,32 @@ echo %YELLOW%[MySQL] Parando servidor...%RESET%
 if errorlevel 1 (
     echo %YELLOW%[MySQL] mysqladmin nao respondeu, forcando encerramento do processo...%RESET%
     taskkill /F /IM mysqld.exe >nul 2>&1
+)
+
+REM --- da um tempo para os processos terminarem de verdade (MySQL as
+REM vezes demora pra fechar) antes de considerar que falhou de verdade ---
+set "STOP_FAILED=1"
+for /l %%T in (1,1,6) do (
+    set "STOP_FAILED=0"
+    tasklist /FI "IMAGENAME eq httpd.exe" 2>nul | find /I "httpd.exe" >nul
+    if not errorlevel 1 set "STOP_FAILED=1"
+    tasklist /FI "IMAGENAME eq mysqld.exe" 2>nul | find /I "mysqld.exe" >nul
+    if not errorlevel 1 set "STOP_FAILED=1"
+    if "!STOP_FAILED!"=="0" goto :STOP_CHECK_DONE
+    taskkill /F /IM httpd.exe >nul 2>&1
+    taskkill /F /IM mysqld.exe >nul 2>&1
+    ping -n 2 127.0.0.1 >nul
+)
+:STOP_CHECK_DONE
+
+if "!STOP_FAILED!"=="1" (
+    echo.
+    echo %RED%[ERRO] Nao consegui encerrar o Apache/MySQL.%RESET%
+    echo %GRAY%Isso costuma acontecer quando o "--start" foi rodado como Administrador:%RESET%
+    echo %GRAY%os processos sobem com esse privilegio e so podem ser encerrados por uma janela tambem Administrador.%RESET%
+    echo %GRAY%Feche este terminal e rode "%~n0 --stop" novamente como Administrador.%RESET%
+    echo.
+    goto :eof
 )
 
 cls

@@ -1,2 +1,10 @@
-/bin
+bin/apache
+bin/config
+bin/data
+bin/debug
+bin/mysql
+bin/php
+bin/hidden_run.vbs
+bin/my.ini
+
 /www
