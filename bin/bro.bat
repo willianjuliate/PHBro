@@ -51,28 +51,54 @@ REM Apache exige "/" em vez de "\" dentro do httpd.conf
 set "APACHE_HOME_FWD=%APACHE_HOME:\=/%"
 set "WWW_HOME_FWD=%WWW_HOME:\=/%"
 
-if "%~1"=="--h" (
+REM --- Normaliza args: cada opcao tem uma forma longa (--xxx) e um
+REM     atalho curto equivalente. Traduz o atalho para a forma longa
+REM     e todo o resto do script so precisa conhecer uma delas.
+set "ARG=%~1"
+if not defined ARG set "ARG=--help"
+
+if /I "%ARG%"=="-h"    set "ARG=--help"
+if /I "%ARG%"=="-v"    set "ARG=--version"
+if /I "%ARG%"=="-s"    set "ARG=--start"
+if /I "%ARG%"=="-sc"   set "ARG=--start-clean"
+if /I "%ARG%"=="-x"    set "ARG=--stop"
+if /I "%ARG%"=="-r"    set "ARG=--restart"
+if /I "%ARG%"=="-st"   set "ARG=--status"
+if /I "%ARG%"=="-wd"   set "ARG=--wipe-data"
+if /I "%ARG%"=="-php"  set "ARG=--php-select"
+if /I "%ARG%"=="-p"    set "ARG=--port"
+if /I "%ARG%"=="-proj" set "ARG=--project"
+if /I "%ARG%"=="-md"   set "ARG=--multi-domain"
+if /I "%ARG%"=="-d"    set "ARG=--domain"
+if /I "%ARG%"=="-ssl"  set "ARG=--https"
+if /I "%ARG%"=="-dbg"  set "ARG=--debug"
+if /I "%ARG%"=="-o"    set "ARG=--open"
+
+REM --- Compatibilidade com atalhos de versoes anteriores ---
+if /I "%ARG%"=="--h"  set "ARG=--help"
+if /I "%ARG%"=="--v"  set "ARG=--version"
+if /I "%ARG%"=="--md" set "ARG=--multi-domain"
+if /I "%ARG%"=="--d"  set "ARG=--domain"
+if /I "%ARG%"=="--o"  set "ARG=--open"
+
+if /I "%ARG%"=="--help" (
     call :HELP
     goto :END
 )
-if "%~1"=="--help" (
-    call :HELP
-    goto :END
-)
-if "%~1"=="--start" (
+if /I "%ARG%"=="--start" (
     call :START
     goto :END
 )
-if "%~1"=="--start-clean" (
+if /I "%ARG%"=="--start-clean" (
     call :CLEANUP
     call :START
     goto :END
 )
-if "%~1"=="--stop" (
+if /I "%ARG%"=="--stop" (
     call :STOP
     goto :END
 )
-if "%~1"=="--restart" (
+if /I "%ARG%"=="--restart" (
     call :STOP
     echo.
     echo %CYAN%Aguardando liberar as portas...%RESET%
@@ -80,23 +106,19 @@ if "%~1"=="--restart" (
     call :START
     goto :END
 )
-if "%~1"=="--status" (
+if /I "%ARG%"=="--status" (
     call :STATUS
     goto :END
 )
-if "%~1"=="--wipe-data" (
+if /I "%ARG%"=="--wipe-data" (
     call :WIPE_DATA
     goto :END
 )
-if "%~1"=="--version" (
+if /I "%ARG%"=="--version" (
     call :VERSION
     goto :END
 )
-if "%~1"=="--v" (
-    call :VERSION
-    goto :END
-)
-if "%~1"=="--php-select" (
+if /I "%ARG%"=="--php-select" (
     if exist "%PHP_CONFIG%" del /Q "%PHP_CONFIG%" >nul 2>&1
     call :DETECT_PHP
     if defined PHP_HOME (
@@ -106,8 +128,7 @@ if "%~1"=="--php-select" (
     )
     goto :END
 )
-
-if "%~1"=="--port" (
+if /I "%ARG%"=="--port" (
     set "OLD_PORT="
     if exist "%PORT_CONFIG%" set /p OLD_PORT=<"%PORT_CONFIG%"
     if exist "%PORT_CONFIG%" del /Q "%PORT_CONFIG%" >nul 2>&1
@@ -126,8 +147,7 @@ if "%~1"=="--port" (
     call :OFFER_RESTART
     goto :END
 )
-
-if "%~1"=="--project" (
+if /I "%ARG%"=="--project" (
     call :DETECT_PROJECT
     if defined PROJECT_CHANGED (
         echo.
@@ -135,22 +155,13 @@ if "%~1"=="--project" (
     )
     goto :END
 )
-
-if "%~1"=="--multi-domain" (
+if /I "%ARG%"=="--multi-domain" (
     call :TOGGLE_MULTIDOMAIN
     echo.
     call :OFFER_RESTART
     goto :END
 )
-
-if "%~1"=="--md" (
-    call :TOGGLE_MULTIDOMAIN
-    echo.
-    call :OFFER_RESTART
-    goto :END
-)
-
-if "%~1"=="--d" (
+if /I "%ARG%"=="--domain" (
     call :DETECT_DOMAIN
     if defined APACHE_DOMAIN (
         echo.
@@ -158,15 +169,13 @@ if "%~1"=="--d" (
     )
     goto :END
 )
-
-if "%~1"=="--https" (
+if /I "%ARG%"=="--https" (
     call :TOGGLE_SSL
     echo.
     call :OFFER_RESTART
     goto :END
 )
-
-if "%~1"=="--debug" (
+if /I "%ARG%"=="--debug" (
     call :CHECK_RUNNING
     if "!RUNNING!"=="1" (
         call :LOAD_DOMAIN
@@ -178,14 +187,7 @@ if "%~1"=="--debug" (
     )
     goto :END
 )
-
-if "%~1"=="--open" (
-    call :OPEN_BROWSER
-    call :STATUS
-    goto :END
-)
-
-if "%~1"=="--o" (
+if /I "%ARG%"=="--open" (
     call :OPEN_BROWSER
     call :STATUS
     goto :END
@@ -195,9 +197,10 @@ call :HELP
 goto :END
 
 :: =====================================================
-:: HELP
+:: BANNER - logo ASCII + tagline, usado por HELP, VERSION,
+:: STATUS, START e STOP (evita repetir a arte 5x no arquivo)
 :: =====================================================
-:HELP
+:BANNER
 echo %MAGENTA%██████╗ ██╗  ██╗██████╗ ██████╗  ██████╗%RESET%
 echo %MAGENTA%██╔══██╗██║  ██║██╔══██╗██╔══██╗██╔═══██╗%RESET%
 echo %MAGENTA%██████╔╝███████║██████╔╝██████╔╝██║   ██║%RESET%
@@ -205,31 +208,50 @@ echo %MAGENTA%██╔═══╝ ██╔══██║██╔══█�
 echo %MAGENTA%██║     ██║  ██║██████╔╝██║  ██║╚██████╔╝%RESET%
 echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝%RESET%
 echo %CYAN%Your PHP Development Buddy%RESET%
+goto :eof
+
+:: =====================================================
+:: FOOTER - rodape com versao, repositorio e contato,
+:: usado por STATUS e STOP
+:: =====================================================
+:FOOTER
+echo %GRAY%──────────────────────────────────────────%RESET%
+echo   %BOLD%PHBro%RESET% %GRAY%v%SCRIPT_VERSION%%RESET%
+echo   %GRAY%Repositorio:%RESET% %CYAN%https://github.com/willianjuliate/PHBro%RESET%
+echo   %GRAY%Contato    :%RESET% %CYAN%contato@76sys.com.br%RESET%
+echo %GRAY%──────────────────────────────────────────%RESET%
+goto :eof
+
+:: =====================================================
+:: HELP
+:: =====================================================
+:HELP
+call :BANNER
 echo.
-echo %BOLD%Uso:%RESET% %~n0 [opcao]   
+echo %BOLD%Uso:%RESET% %~n0 [opcao]
 echo.
 echo %BOLD%Opcoes disponiveis:%RESET%
-echo   %GREEN%--start%RESET%          Inicia Apache e MySQL (sem limpar execucoes anteriores)
-echo   %GREEN%--start-clean%RESET%    Limpa execucoes anteriores (mata processos e apaga logs) e inicia
-echo   %RED%--stop%RESET%             Encerra Apache e MySQL
-echo   %YELLOW%--restart%RESET%       Executa --stop e em seguida --start
-echo   %CYAN%--status%RESET%          Mostra checklist do que esta rodando
-echo   %RED%--wipe-data%RESET%        Apaga a pasta data\ (reseta o banco MySQL do zero)
-echo   %BLUE%--php-select%RESET%      Escolhe/troca qual versao de PHP usar
-echo   %BLUE%--port%RESET%            Escolhe/troca a porta do Apache
-echo   %BLUE%--project%RESET%         Escolhe qual projeto de www\ o Apache vai servir (ou todos)
-echo   %BLUE%--debug%RESET%           Abre a tela de debug ^(requisicoes e erros ao vivo^), precisa do Apache ja rodando
-echo   %BLUE%--multi-domain, --md%RESET%  Liga/desliga dominio automatico por pasta: cada pasta de www\ vira "pasta.bro"
-echo   %BLUE%--d%RESET%               Define um dominio local customizado ^(ex: meuprojeto.bro^), exige Admin
-echo   %BLUE%--https%RESET%           Liga/desliga HTTPS (certificado autoassinado)
-echo   %BLUE%--open, --o%RESET%       Abre o navegador padrao no endereco do projeto
-echo   %BLUE%--version, --v%RESET%    Mostra a versao do script e dos componentes
-echo   %GRAY%--help, --h%RESET%       Mostra este menu de ajuda
+echo   %GREEN%--start,        -s%RESET%     Inicia Apache e MySQL (sem limpar execucoes anteriores)
+echo   %GREEN%--start-clean,  -sc%RESET%    Limpa execucoes anteriores (mata processos e apaga logs) e inicia
+echo   %RED%--stop,         -x%RESET%     Encerra Apache e MySQL
+echo   %YELLOW%--restart,      -r%RESET%     Executa --stop e em seguida --start
+echo   %CYAN%--status,       -st%RESET%    Mostra checklist do que esta rodando
+echo   %RED%--wipe-data,    -wd%RESET%    Apaga a pasta data\ (reseta o banco MySQL do zero)
+echo   %BLUE%--php-select,   -php%RESET%   Escolhe/troca qual versao de PHP usar
+echo   %BLUE%--port,         -p%RESET%     Escolhe/troca a porta do Apache
+echo   %BLUE%--project,      -proj%RESET%  Escolhe qual projeto de www\ o Apache vai servir (ou todos)
+echo   %BLUE%--debug,        -dbg%RESET%   Abre a tela de debug ^(requisicoes e erros ao vivo^), precisa do Apache ja rodando
+echo   %BLUE%--multi-domain, -md%RESET%    Liga/desliga dominio automatico por pasta: cada pasta de www\ vira "pasta.ms"
+echo   %BLUE%--domain,       -d%RESET%     Define um dominio local customizado ^(ex: meuprojeto.ms^), exige Admin
+echo   %BLUE%--https,        -ssl%RESET%   Liga/desliga HTTPS (certificado autoassinado)
+echo   %BLUE%--open,         -o%RESET%     Abre o navegador padrao no endereco do projeto
+echo   %BLUE%--version,      -v%RESET%     Mostra a versao do script e dos componentes
+echo   %GRAY%--help,         -h%RESET%     Mostra este menu de ajuda
 echo.
 echo %BOLD%Exemplos:%RESET%
-echo   %~n0 --v
-echo   %~n0 --start
-echo   %~n0 --stop
+echo   %~n0 -v
+echo   %~n0 -s
+echo   %~n0 -x
 echo.
 call :LOAD_PORT
 call :LOAD_DOMAIN
@@ -330,13 +352,8 @@ goto :eof
 :: VERSION - versao do script e dos componentes instalados
 :: =====================================================
 :VERSION
-echo %MAGENTA%██████╗ ██╗  ██╗██████╗ ██████╗  ██████╗%RESET%
-echo %MAGENTA%██╔══██╗██║  ██║██╔══██╗██╔══██╗██╔═══██╗%RESET%
-echo %MAGENTA%██████╔╝███████║██████╔╝██████╔╝██║   ██║%RESET%
-echo %MAGENTA%██╔═══╝ ██╔══██║██╔══██╗██╔══██╗██║   ██║%RESET%
-echo %MAGENTA%██║     ██║  ██║██████╔╝██║  ██║╚██████╔╝%RESET%
-echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝%RESET%
-echo %CYAN%Your PHP Development Buddy%RESET% %GRAY%~ %SCRIPT_VERSION%%RESET%
+call :BANNER
+echo %GRAY%~ v%SCRIPT_VERSION%%RESET%
 echo.
 
 call :DETECT_PHP
@@ -407,13 +424,7 @@ goto :eof
 :: STATUS - checklist do que esta rodando
 :: =====================================================
 :STATUS
-echo %MAGENTA%██████╗ ██╗  ██╗██████╗ ██████╗  ██████╗%RESET%
-echo %MAGENTA%██╔══██╗██║  ██║██╔══██╗██╔══██╗██╔═══██╗%RESET%
-echo %MAGENTA%██████╔╝███████║██████╔╝██████╔╝██║   ██║%RESET%
-echo %MAGENTA%██╔═══╝ ██╔══██║██╔══██╗██╔══██╗██║   ██║%RESET%
-echo %MAGENTA%██║     ██║  ██║██████╔╝██║  ██║╚██████╔╝%RESET%
-echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝%RESET%
-echo %CYAN%Your PHP Development Buddy%RESET%
+call :BANNER
 echo.
 
 call :LOAD_PORT
@@ -465,7 +476,7 @@ if "%SSL_ENABLED%"=="1" (
 )
 
 if "!MULTIDOMAIN_ENABLED!"=="1" (
-    echo   Modo    : %CYAN%Multi-dominio%RESET% %GRAY%[cada pasta de www\ tem seu proprio dominio .bro]%RESET%
+    echo   Modo    : %CYAN%Multi-dominio%RESET% %GRAY%[cada pasta de www\ tem seu proprio dominio .ms]%RESET%
     echo   Dominios:
     call :LIST_MULTIDOMAIN_DOMAINS
 ) else (
@@ -482,11 +493,7 @@ if "!MULTIDOMAIN_ENABLED!"=="1" (
 )
 
 echo.
-echo %GRAY%──────────────────────────────────────────%RESET%
-echo   %BOLD%PHBro%RESET% %GRAY%v%SCRIPT_VERSION%%RESET%
-echo   %GRAY%Repositorio:%RESET% %CYAN%https://github.com/willianjuliate/PHBro%RESET%
-echo   %GRAY%Contato    :%RESET% %CYAN%contato@76sys.com.br%RESET%
-echo %GRAY%──────────────────────────────────────────%RESET%
+call :FOOTER
 echo.
 goto :eof
 
@@ -517,7 +524,7 @@ goto :eof
 :: OPEN_BROWSER - abre o navegador padrao no endereco do
 :: projeto. Se HTTPS estiver ativo, pergunta qual protocolo;
 :: se so tiver HTTP, abre direto. No modo multi-dominio,
-:: deixa escolher qual dos dominios "pasta.bro" abrir.
+:: deixa escolher qual dos dominios "pasta.ms" abrir.
 :: =====================================================
 :OPEN_BROWSER
 call :LOAD_DOMAIN
@@ -590,15 +597,16 @@ goto :eof
 
 :: =====================================================
 :: DETECT_DOMAIN - pergunta um dominio local customizado
-:: (ex: meuprojeto.bro), aponta ele para 127.0.0.1 no hosts
-:: do Windows e salva a escolha. Usado pelo "--d". Vale como
-:: dominio "fixo" quando o multi-dominio (--multi-domain)
-:: esta desligado; exige Administrador para editar o hosts.
+:: (ex: meuprojeto.ms), aponta ele para 127.0.0.1 no hosts
+:: do Windows e salva a escolha. Usado pelo "--domain"/"-d".
+:: Vale como dominio "fixo" quando o multi-dominio
+:: (--multi-domain) esta desligado; exige Administrador
+:: para editar o hosts.
 :: =====================================================
 :DETECT_DOMAIN
 set "APACHE_DOMAIN="
 echo %CYAN%Dominio local customizado%RESET%
-echo Sugestao: %BOLD%meuprojeto.bro%RESET%  ^(escolha o nome que quiser^)
+echo Sugestao: %BOLD%meuprojeto.ms%RESET%  ^(escolha o nome que quiser^)
 echo Deixe em branco para cancelar, ou digite "localhost" para voltar ao padrao.
 echo.
 set /p APACHE_DOMAIN="Dominio: "
@@ -744,7 +752,7 @@ set "PROJECT_CHANGED="
 
 call :LOAD_MULTIDOMAIN
 if "!MULTIDOMAIN_ENABLED!"=="1" (
-    echo %YELLOW%[AVISO] O modo multi-dominio esta ativo - cada pasta de www\ ja tem seu proprio dominio ^(pasta.bro^).%RESET%
+    echo %YELLOW%[AVISO] O modo multi-dominio esta ativo - cada pasta de www\ ja tem seu proprio dominio ^(pasta.ms^).%RESET%
     echo %GRAY%A selecao de projeto abaixo so vale como fallback ^(acesso direto por IP/porta^). Use "%~n0 --multi-domain" para desativar esse modo.%RESET%
     echo.
 )
@@ -815,7 +823,7 @@ if exist "%WWW_ROOT%\!PROJ_PICK!\public\" (
     echo %GRAY%A pasta "www\!PROJ_PICK!" vira a raiz do site.%RESET%
 )
 if "!MULTIDOMAIN_ENABLED!"=="1" (
-    echo %GRAY%^(Modo multi-dominio ativo - esse projeto so vale como fallback, o dominio real ja e "!PROJ_PICK!.bro"^)%RESET%
+    echo %GRAY%^(Modo multi-dominio ativo - esse projeto so vale como fallback, o dominio real ja e "!PROJ_PICK!.ms"^)%RESET%
 )
 set "PROJECT_CHANGED=1"
 goto :eof
@@ -833,7 +841,7 @@ goto :eof
 
 :: =====================================================
 :: TOGGLE_MULTIDOMAIN - liga/desliga o modo multi-projeto.
-:: Ligado, cada pasta em www\ vira um dominio "nome.bro"
+:: Ligado, cada pasta em www\ vira um dominio "nome.ms"
 :: proprio, todos servidos ao mesmo tempo na mesma porta.
 :: Exige Administrador para atualizar o hosts do Windows.
 :: =====================================================
@@ -845,7 +853,7 @@ if "!MULTIDOMAIN_ENABLED!"=="1" (
     if "!IS_ADMIN!"=="1" (
         call :CLEAR_MULTIDOMAIN_HOSTS
     ) else (
-        echo %YELLOW%[AVISO] Nao estou como Administrador, entao as entradas antigas de "*.bro" ficaram no hosts.%RESET%
+        echo %YELLOW%[AVISO] Nao estou como Administrador, entao as entradas antigas de "*.ms" ficaram no hosts.%RESET%
         echo %GRAY%Rode "%~n0 --multi-domain" como Administrador depois para limpar.%RESET%
     )
     echo %YELLOW%[Multi-dominio] Desativado. Volta a servir um unico projeto/raiz ^(veja "%~n0 --project"^).%RESET%
@@ -875,7 +883,7 @@ if !MULTI_PROJ_COUNT! equ 0 (
 
 >"%MULTI_CONFIG%" echo 1
 echo %GREEN%[Multi-dominio] Ativado.%RESET%
-echo %GRAY%Cada pasta em "www\" vira um dominio proprio, sempre terminando em ".bro":%RESET%
+echo %GRAY%Cada pasta em "www\" vira um dominio proprio, sempre terminando em ".ms":%RESET%
 echo.
 call :LOAD_PORT
 call :LOAD_SSL
@@ -885,7 +893,7 @@ goto :eof
 
 :: =====================================================
 :: LIST_MULTIDOMAIN_DOMAINS - imprime a lista de dominios
-:: que serao gerados a partir das pastas de www\ (nome.bro),
+:: que serao gerados a partir das pastas de www\ (nome.ms),
 :: com http/https na frente e indicando se cada um serve a
 :: partir de public\ ou nao. Espera APACHE_PORT/SSL_ENABLED
 :: ja carregados (LOAD_PORT/LOAD_SSL) antes de chamar.
@@ -893,19 +901,19 @@ goto :eof
 :LIST_MULTIDOMAIN_DOMAINS
 for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
     if exist "%WWW_ROOT%\%%D\public\" (
-        echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D\public]%RESET%
+        echo   %CYAN%http://%%D.ms:%APACHE_PORT%%RESET% %GRAY%[www\%%D\public]%RESET%
     ) else (
-        echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D]%RESET%
+        echo   %CYAN%http://%%D.ms:%APACHE_PORT%%RESET% %GRAY%[www\%%D]%RESET%
     )
     if "!SSL_ENABLED!"=="1" (
-        echo   %CYAN%https://%%D.bro%RESET%
+        echo   %CYAN%https://%%D.ms%RESET%
     )
 )
 goto :eof
 
 :: =====================================================
 :: GENERATE_VHOSTS - gera bin\config\vhosts.conf com um
-:: <VirtualHost> por pasta de www\ (dominio "pasta.bro"),
+:: <VirtualHost> por pasta de www\ (dominio "pasta.ms"),
 :: respeitando public\ quando existir. Se HTTPS estiver
 :: ativo, gera tambem o bloco :443 para cada dominio,
 :: reaproveitando o certificado autoassinado do PHBro.
@@ -913,7 +921,7 @@ goto :eof
 :GENERATE_VHOSTS
 (
     echo # Gerado automaticamente pelo PHBro em cada --start. NAO EDITE A MAO.
-    echo # Um dominio "pasta.bro" por subpasta de www\
+    echo # Um dominio "pasta.ms" por subpasta de www\
 ) > "%VHOSTS_FILE%"
 
 for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
@@ -924,8 +932,8 @@ for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
     (
         echo(
         echo ^<VirtualHost *:%APACHE_PORT%^>
-        echo     ServerName !MDOM_PROJ!.bro
-        echo     ServerAlias www.!MDOM_PROJ!.bro
+        echo     ServerName !MDOM_PROJ!.ms
+        echo     ServerAlias www.!MDOM_PROJ!.ms
         echo     DocumentRoot "!MDOM_ROOT_FWD!"
         echo     ^<Directory "!MDOM_ROOT_FWD!"^>
         echo         AllowOverride All
@@ -938,8 +946,8 @@ for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
         (
             echo(
             echo ^<VirtualHost *:443^>
-            echo     ServerName !MDOM_PROJ!.bro
-            echo     ServerAlias www.!MDOM_PROJ!.bro
+            echo     ServerName !MDOM_PROJ!.ms
+            echo     ServerAlias www.!MDOM_PROJ!.ms
             echo     DocumentRoot "!MDOM_ROOT_FWD!"
             echo     ^<Directory "!MDOM_ROOT_FWD!"^>
             echo         AllowOverride All
@@ -963,7 +971,7 @@ goto :eof
 call :CHECK_ADMIN
 if not "!IS_ADMIN!"=="1" (
     echo %YELLOW%[AVISO] Nao estou como Administrador - nao posso atualizar o hosts do Windows.%RESET%
-    echo %GRAY%Os dominios ".bro" podem nao resolver ate voce rodar o %~n0 como Administrador ao menos uma vez.%RESET%
+    echo %GRAY%Os dominios ".ms" podem nao resolver ate voce rodar o %~n0 como Administrador ao menos uma vez.%RESET%
     goto :eof
 )
 set "HOSTS_FILE=%WINDIR%\System32\drivers\etc\hosts"
@@ -971,8 +979,8 @@ call :STRIP_HOSTS_BLOCK_MULTI
 (
     echo # PHBro-Multi inicio
     for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
-        echo 127.0.0.1    %%D.bro
-        echo 127.0.0.1    www.%%D.bro
+        echo 127.0.0.1    %%D.ms
+        echo 127.0.0.1    www.%%D.ms
     )
     echo # PHBro-Multi fim
 )>> "%HOSTS_FILE%"
@@ -1230,13 +1238,7 @@ goto :eof
 :: START
 :: =====================================================
 :START
-echo %MAGENTA%██████╗ ██╗  ██╗██████╗ ██████╗  ██████╗%RESET%
-echo %MAGENTA%██╔══██╗██║  ██║██╔══██╗██╔══██╗██╔═══██╗%RESET%
-echo %MAGENTA%██████╔╝███████║██████╔╝██████╔╝██║   ██║%RESET%
-echo %MAGENTA%██╔═══╝ ██╔══██║██╔══██╗██╔══██╗██║   ██║%RESET%
-echo %MAGENTA%██║     ██║  ██║██████╔╝██║  ██║╚██████╔╝%RESET%
-echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝%RESET%
-echo %CYAN%Your PHP Development Buddy%RESET%
+call :BANNER
 echo.
 
 call :CHECK_ADMIN
@@ -1355,12 +1357,12 @@ if "!MULTIDOMAIN_ENABLED!"=="1" (
 echo   %GRAY%[Multi-dominio ativado - cada pasta de www\ tem seu proprio dominio]%RESET%
     for /f "delims=" %%D in ('dir /b /ad "%WWW_ROOT%" 2^>nul') do (
         if exist "%WWW_ROOT%\%%D\public\" (
-echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D\public]%RESET%
+echo   %CYAN%http://%%D.ms:%APACHE_PORT%%RESET% %GRAY%[www\%%D\public]%RESET%
         ) else (
-echo   %CYAN%http://%%D.bro:%APACHE_PORT%%RESET% %GRAY%[www\%%D]%RESET%
+echo   %CYAN%http://%%D.ms:%APACHE_PORT%%RESET% %GRAY%[www\%%D]%RESET%
         )
         if "!SSL_ENABLED!"=="1" (
-echo   %CYAN%https://%%D.bro%RESET%
+echo   %CYAN%https://%%D.ms%RESET%
         )
     )
 ) else (
@@ -1454,21 +1456,11 @@ if "!STOP_FAILED!"=="1" (
 
 cls
 echo.
-echo %MAGENTA%██████╗ ██╗  ██╗██████╗ ██████╗  ██████╗%RESET%
-echo %MAGENTA%██╔══██╗██║  ██║██╔══██╗██╔══██╗██╔═══██╗%RESET%
-echo %MAGENTA%██████╔╝███████║██████╔╝██████╔╝██║   ██║%RESET%
-echo %MAGENTA%██╔═══╝ ██╔══██║██╔══██╗██╔══██╗██║   ██║%RESET%
-echo %MAGENTA%██║     ██║  ██║██████╔╝██║  ██║╚██████╔╝%RESET%
-echo %MAGENTA%╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝%RESET%
-echo %CYAN%Your PHP Development Buddy%RESET%
+call :BANNER
 echo.
 echo %GREEN%√ Ambiente encerrado com sucesso.%RESET% Ate a proxima!
 echo.
-echo %GRAY%──────────────────────────────────────────%RESET%
-echo   %BOLD%PHBro%RESET% %GRAY%v%SCRIPT_VERSION%%RESET%
-echo   %GRAY%Repositorio:%RESET% %CYAN%https://github.com/willianjuliate/PHBro%RESET%
-echo   %GRAY%Contato    :%RESET% %CYAN%contato@76sys.com.br%RESET%
-echo %GRAY%──────────────────────────────────────────%RESET%
+call :FOOTER
 echo.
 goto :eof
 
